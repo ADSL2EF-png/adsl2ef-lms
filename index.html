@@ -1,0 +1,53 @@
+﻿<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ADSL-2EF</title>
+  <meta
+    name="description"
+    content="Plateforme numérique ADSL-2EF pour les cours, évaluations, suivi pédagogique, administration et gestion des parcours."
+  >
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=Playfair+Display:wght@700;800&display=swap"
+    rel="stylesheet"
+  >
+  <link rel="stylesheet" href="./styles.css">
+</head>
+<body>
+  <div class="app-shell">
+    <div id="site-banner"></div>
+    <header class="topbar">
+      <div class="brand-block">
+        <div class="brand-logo-wrap" aria-hidden="true">
+          <img src="./logo-adsl2ef.svg" alt="Logo ADSL-2EF" class="brand-logo">
+        </div>
+        <div class="brand-copy">
+          <p class="brand-name">ADSL-2EF</p>
+          <p class="brand-tagline">EXCELLENCE ÉDUCATIVE · TOGO</p>
+        </div>
+      </div>
+      <div class="topbar-actions" id="topbar-actions"></div>
+    </header>
+
+    <main id="app"></main>
+  </div>
+
+  <template id="modal-template">
+    <div class="modal-backdrop">
+      <div class="modal-card">
+        <button class="modal-close" data-close-modal aria-label="Fermer">x</button>
+        <div class="modal-content"></div>
+      </div>
+    </div>
+  </template>
+
+  <script src="./auth-security.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="./app.js"></script>
+  <script src="./pwa-register.js"></script>
+</body>
+</html>
+
