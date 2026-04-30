@@ -1,10 +1,13 @@
-﻿const STORAGE_KEY = "adsl2ef-lms-v1";
+const STORAGE_KEY = "adsl2ef-lms-v1";
 
 const roleLabels = { student: "Apprenant", teacher: "Enseignant", admin: "Administrateur" };
 const statusLabels = { draft: "Brouillon", published: "Publié", archived: "Archivé", submitted: "Soumis", reviewed: "Corrigé", pending: "En attente", graded: "Noté" };
-const DEFAULT_SUPABASE_URL = "https://cawhebskwvnnvwetmxyd.supabase.co";
-const DEFAULT_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_FsczNyLFH5y3-cCPcAkEeg_l_tGcb_a";
-const DEFAULT_SUPABASE_PROJECT_REF = "cawhebskwvnnvwetmxyd";
+// Les identifiants Supabase sont configurés dans le panneau d'administration
+// (Paramètres → Persistance → Supabase) et stockés dans localStorage.
+// Ne jamais coder ces valeurs en dur dans ce fichier.
+const DEFAULT_SUPABASE_URL = "";
+const DEFAULT_SUPABASE_PUBLISHABLE_KEY = "";
+const DEFAULT_SUPABASE_PROJECT_REF = "";
 
 function nowISO() { return new Date().toISOString(); }
 function plusDays(days) { const d = new Date(); d.setDate(d.getDate() + days); return d.toISOString(); }
@@ -478,17 +481,22 @@ function migrateState(parsed) {
     ...structuredClone(starterData).session,
     ...(parsed.session || {})
   };
-  next.courses = (parsed.courses || []).map((course) => ({
-    catalogType: course.category === "Formation Pro" ? "pro" : "school",
-    price: course.category === "Formation Pro" ? 45000 : 15000,
-    pricingLabel: course.category === "Formation Pro" ? "par cohorte" : "par trimestre",
-    salesTag: course.category === "Formation Pro" ? "Certifiant" : "Best-seller",
-    sellingPoints: course.category === "Formation Pro"
-      ? ["Templates pedagogiques", "Cas pratiques", "Suivi des cohortes", "Attestation finale"]
-      : ["Videos HD", "PDF telechargeables", "Quiz et devoirs", "Suivi de progression"],
-    release: normalizeCourseReleaseState(course.release),
-    ...course
-  }));
+  next.courses = (parsed.courses || []).map((course) => {
+    const derivedCatalogType = course.category === "Formation Pro" ? "pro" : "school";
+    const catalogType = course.catalogType || derivedCatalogType;
+    return {
+      catalogType,
+      price: catalogType === "pro" ? 45000 : 15000,
+      pricingLabel: catalogType === "pro" ? "par cohorte" : "par trimestre",
+      salesTag: catalogType === "pro" ? "Certifiant" : "Best-seller",
+      sellingPoints: catalogType === "pro"
+        ? ["Templates pedagogiques", "Cas pratiques", "Suivi des cohortes", "Attestation finale"]
+        : ["Videos HD", "PDF telechargeables", "Quiz et devoirs", "Suivi de progression"],
+      release: normalizeCourseReleaseState(course.release),
+      ...course,
+      catalogType // priorité au catalogType final calculé
+    };
+  });
   next.announcements = parsed.announcements || [];
   next.messages = parsed.messages || [];
   next.forumThreads = parsed.forumThreads || [];
@@ -4424,6 +4432,7 @@ function openCourseBuilder() {
       <div class="field full"><label for="course-description">Description</label><textarea id="course-description" name="description" required></textarea></div>
       <div class="field"><label for="course-teacher">Enseignant</label><select id="course-teacher" name="teacherId">${teachers.map((teacher) => `<option value="${teacher.id}">${escapeHtml(teacher.name)}</option>`).join("")}</select></div>
       <div class="field"><label for="course-status">Statut</label><select id="course-status" name="status"><option value="draft">Brouillon</option><option value="published">Publié</option></select></div>
+      <div class="field"><label for="course-catalog-type">Type de catalogue</label><select id="course-catalog-type" name="catalogType"><option value="school">École Numérique</option><option value="pro">Formation Pro</option></select></div>
       <div class="field full"><button class="btn-primary" type="submit">Créer le cours</button></div>
     </form>
   `);
@@ -4481,6 +4490,7 @@ function openCourseEditor(courseId) {
       <div class="field full"><label for="edit-course-description">Description</label><textarea id="edit-course-description" name="description" required>${escapeHtml(course.description)}</textarea></div>
       <div class="field"><label for="edit-course-teacher">Enseignant</label><select id="edit-course-teacher" name="teacherId">${teachers.map((teacher) => `<option value="${teacher.id}" ${teacher.id === course.teacherId ? "selected" : ""}>${escapeHtml(teacher.name)}</option>`).join("")}</select></div>
       <div class="field"><label for="edit-course-status">Statut</label><select id="edit-course-status" name="status"><option value="draft" ${course.status === "draft" ? "selected" : ""}>Brouillon</option><option value="published" ${course.status === "published" ? "selected" : ""}>Publié</option></select></div>
+      <div class="field"><label for="edit-course-catalog-type">Type de catalogue</label><select id="edit-course-catalog-type" name="catalogType"><option value="school" ${(course.catalogType || "school") === "school" ? "selected" : ""}>École Numérique</option><option value="pro" ${course.catalogType === "pro" ? "selected" : ""}>Formation Pro</option></select></div>
       <div class="field full"><button class="btn-primary" type="submit">Enregistrer</button></div>
     </form>
   `);
@@ -5320,16 +5330,26 @@ function handleContactSubmit(event) {
 async function handleCourseCreate(event) {
   event.preventDefault();
   const formData = new FormData(event.currentTarget);
+  const category = String(formData.get("category")).trim();
+  const catalogType = String(formData.get("catalogType") || (category === "Formation Pro" ? "pro" : "school"));
   const newCourse = {
     id: crypto.randomUUID(),
     title: String(formData.get("title")).trim(),
-    category: String(formData.get("category")).trim(),
+    category,
+    catalogType,
     description: String(formData.get("description")).trim(),
     image: String(formData.get("image")).trim() || "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80",
     teacherId: String(formData.get("teacherId")),
     status: String(formData.get("status")),
     audience: String(formData.get("audience")).trim(),
     duration: String(formData.get("duration")).trim(),
+    price: catalogType === "pro" ? 45000 : 15000,
+    pricingLabel: catalogType === "pro" ? "par cohorte" : "par trimestre",
+    salesTag: catalogType === "pro" ? "Certifiant" : "Best-seller",
+    sellingPoints: catalogType === "pro"
+      ? ["Templates pedagogiques", "Cas pratiques", "Suivi des cohortes", "Attestation finale"]
+      : ["Videos HD", "PDF telechargeables", "Quiz et devoirs", "Suivi de progression"],
+    release: normalizeCourseReleaseState(null),
     createdAt: nowISO(),
     enrolledUserIds: [],
     modules: [{ id: crypto.randomUUID(), title: "Module 1 - Demarrage", summary: "Module initial genere automatiquement.", order: 1, lessons: [{ id: crypto.randomUUID(), title: "Lecon d'introduction", type: "reading", duration: "10 min", content: "Ajoutez ici les objectifs, contenus et consignes de depart.", resources: [] }] }]
@@ -5360,6 +5380,7 @@ async function handleCourseEdit(event) {
   const formData = new FormData(event.currentTarget);
   course.title = String(formData.get("title")).trim();
   course.category = String(formData.get("category")).trim();
+  course.catalogType = String(formData.get("catalogType") || (course.category === "Formation Pro" ? "pro" : "school"));
   course.audience = String(formData.get("audience")).trim();
   course.duration = String(formData.get("duration")).trim();
   course.image = String(formData.get("image")).trim();
