@@ -13,6 +13,25 @@ const PAYMENT_WEBHOOK_SECRET = process.env.ADSL2EF_PAYMENT_WEBHOOK_SECRET || "";
 const ALLOWED_ORIGIN = process.env.ADSL2EF_ALLOWED_ORIGIN || "";
 const BODY_SIZE_LIMIT = 512 * 1024; // 512 Ko max
 
+// ─── Fichiers statiques (frontend) ────────────────────────────────────────
+const PUBLIC_DIR = path.join(__dirname, "public");
+
+const MIME_TYPES = {
+  ".html": "text/html; charset=utf-8",
+  ".js":   "application/javascript; charset=utf-8",
+  ".css":  "text/css; charset=utf-8",
+  ".svg":  "image/svg+xml",
+  ".png":  "image/png",
+  ".jpg":  "image/jpeg",
+  ".jpeg": "image/jpeg",
+  ".ico":  "image/x-icon",
+  ".json": "application/json; charset=utf-8",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
+  ".woff2": "font/woff2",
+  ".woff":  "font/woff",
+  ".ttf":   "font/ttf"
+};
+
 // ─── Rate limiting (brute force sur /auth/login) ───────────────────────────
 const loginAttempts = new Map(); // ip → { count, resetAt }
 const LOGIN_MAX_ATTEMPTS = 10;
@@ -151,6 +170,47 @@ function json(response, statusCode, payload) {
 
 function notFound(response) {
   json(response, 404, { error: "not_found" });
+}
+
+// ─── Serveur de fichiers statiques ────────────────────────────────────────
+async function serveStatic(request, response) {
+  const urlPath = getRequestPath(request);
+
+  // Sécurité : bloquer les path traversal (ex: /../../../etc/passwd)
+  const safePath = path.normalize(urlPath).replace(/^(\.\.[/\\])+/, "");
+  let filePath = path.join(PUBLIC_DIR, safePath);
+
+  // Si c'est un dossier ou la racine → servir index.html (SPA)
+  try {
+    const stat = await fsp.stat(filePath);
+    if (stat.isDirectory()) {
+      filePath = path.join(filePath, "index.html");
+    }
+  } catch {
+    // Fichier non trouvé → SPA fallback vers index.html
+    filePath = path.join(PUBLIC_DIR, "index.html");
+  }
+
+  try {
+    const content = await fsp.readFile(filePath);
+    const ext = path.extname(filePath).toLowerCase();
+    const contentType = MIME_TYPES[ext] || "application/octet-stream";
+    const origin = request.headers.origin || "";
+    const allowedOrigin = ALLOWED_ORIGIN || origin || "*";
+
+    response.writeHead(200, {
+      "Content-Type": contentType,
+      "X-Content-Type-Options": "nosniff",
+      "X-Frame-Options": "DENY",
+      "Referrer-Policy": "no-referrer",
+      "Access-Control-Allow-Origin": allowedOrigin,
+      // Cache longue durée pour assets, pas pour HTML
+      "Cache-Control": ext === ".html" ? "no-cache" : "public, max-age=31536000, immutable"
+    });
+    response.end(content);
+  } catch {
+    json(response, 404, { error: "not_found" });
+  }
 }
 
 function getRequestPath(request) {
@@ -874,6 +934,10 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "POST" && pathname === "/payments/confirm") return await handlePaymentConfirm(request, response);
     if (request.method === "POST" && pathname.startsWith("/payments/webhook/")) return await handlePaymentWebhook(request, response, pathname.split("/").pop());
     if (request.method === "POST" && pathname === "/lms/events") return await handleBusinessEvent(request, response);
+
+    // Fichiers statiques (frontend) — uniquement GET
+    if (request.method === "GET") return await serveStatic(request, response);
+
     return notFound(response);
   } catch (error) {
     console.error(error);
