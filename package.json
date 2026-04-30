@@ -1,10 +1,15 @@
 {
-  "name": "adsl2ef-platform",
+  "name": "adsl2ef-lms",
   "version": "1.0.0",
-  "private": true,
-  "description": "Plateforme ADSL-2EF avec frontend statique et backend Node natif",
+  "description": "Plateforme LMS ADSL-2EF — Excellence éducative · Togo",
+  "main": "server.js",
   "scripts": {
-    "start:api": "node backend/server.js",
-    "check:api": "node --check backend/server.js"
-  }
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "dependencies": {},
+  "private": true
 }
