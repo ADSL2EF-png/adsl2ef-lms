@@ -10,6 +10,37 @@ const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "0.0.0.0";
 const API_TOKEN = process.env.ADSL2EF_API_TOKEN || "";
 const PAYMENT_WEBHOOK_SECRET = process.env.ADSL2EF_PAYMENT_WEBHOOK_SECRET || "";
+const ALLOWED_ORIGIN = process.env.ADSL2EF_ALLOWED_ORIGIN || "";
+const BODY_SIZE_LIMIT = 512 * 1024; // 512 Ko max
+
+// ─── Rate limiting (brute force sur /auth/login) ───────────────────────────
+const loginAttempts = new Map(); // ip → { count, resetAt }
+const LOGIN_MAX_ATTEMPTS = 10;
+const LOGIN_WINDOW_MS = 15 * 60 * 1000; // 15 minutes
+
+function checkLoginRateLimit(ip) {
+  const now = Date.now();
+  const entry = loginAttempts.get(ip);
+  if (!entry || now > entry.resetAt) {
+    loginAttempts.set(ip, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+    return true;
+  }
+  if (entry.count >= LOGIN_MAX_ATTEMPTS) return false;
+  entry.count++;
+  return true;
+}
+
+function resetLoginRateLimit(ip) {
+  loginAttempts.delete(ip);
+}
+
+// Nettoyage périodique des entrées expirées
+setInterval(() => {
+  const now = Date.now();
+  for (const [ip, entry] of loginAttempts.entries()) {
+    if (now > entry.resetAt) loginAttempts.delete(ip);
+  }
+}, LOGIN_WINDOW_MS);
 const MIXX_INIT_URL = process.env.ADSL2EF_MIXX_INIT_URL || "";
 const MIXX_API_KEY = process.env.ADSL2EF_MIXX_API_KEY || "";
 const MIXX_MERCHANT_ID = process.env.ADSL2EF_MIXX_MERCHANT_ID || "";
@@ -98,13 +129,23 @@ const demoUsers = [
 
 let inMemoryState = null;
 
-function json(response, statusCode, payload) {
-  response.writeHead(statusCode, {
+function getSecurityHeaders(origin) {
+  const allowedOrigin = ALLOWED_ORIGIN || origin || "*";
+  return {
     "Content-Type": "application/json; charset=utf-8",
-    "Access-Control-Allow-Origin": "*",
+    "Access-Control-Allow-Origin": allowedOrigin,
     "Access-Control-Allow-Headers": "Content-Type, Authorization",
-    "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS"
-  });
+    "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY",
+    "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
+    "Referrer-Policy": "no-referrer"
+  };
+}
+
+function json(response, statusCode, payload) {
+  const origin = response.req?.headers?.origin || "";
+  response.writeHead(statusCode, getSecurityHeaders(origin));
   response.end(JSON.stringify(payload));
 }
 
@@ -144,7 +185,8 @@ function signToken(user) {
     sub: user.id,
     email: user.email,
     role: user.role,
-    iat: Math.floor(Date.now() / 1000)
+    iat: Math.floor(Date.now() / 1000),
+    exp: Math.floor(Date.now() / 1000) + (24 * 60 * 60) // Expire dans 24h
   })).toString("base64url");
   const signature = crypto.createHmac("sha256", secret).update(`${header}.${payload}`).digest("base64url");
   return `${header}.${payload}.${signature}`;
@@ -239,7 +281,16 @@ async function appendEvent(event) {
 async function readBody(request) {
   return new Promise((resolve, reject) => {
     let data = "";
-    request.on("data", (chunk) => { data += chunk; });
+    let size = 0;
+    request.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > BODY_SIZE_LIMIT) {
+        request.destroy();
+        reject(new Error("payload_too_large"));
+        return;
+      }
+      data += chunk;
+    });
     request.on("end", () => {
       if (!data) {
         resolve({});
@@ -263,12 +314,20 @@ function requireBearer(request, response) {
   return false;
 }
 
-function decodeTokenSubject(token) {
+function verifyToken(token) {
   try {
-    const payload = token.split(".")[1];
-    if (!payload) return null;
-    const parsed = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-    return parsed.sub || null;
+    const parts = token.split(".");
+    if (parts.length !== 3) return null;
+    const secret = API_TOKEN || "adsl2ef-local-secret";
+    const expectedSig = crypto
+      .createHmac("sha256", secret)
+      .update(`${parts[0]}.${parts[1]}`)
+      .digest("base64url");
+    if (!crypto.timingSafeEqual(Buffer.from(expectedSig), Buffer.from(parts[2]))) return null;
+    const parsed = JSON.parse(Buffer.from(parts[1], "base64url").toString("utf8"));
+    // Vérification expiration (exp optionnel)
+    if (parsed.exp && Math.floor(Date.now() / 1000) > parsed.exp) return null;
+    return parsed;
   } catch {
     return null;
   }
@@ -277,7 +336,9 @@ function decodeTokenSubject(token) {
 function getAuthenticatedUserId(request) {
   const auth = request.headers.authorization || "";
   if (!auth.startsWith("Bearer ")) return null;
-  return decodeTokenSubject(auth.slice("Bearer ".length).trim());
+  const token = auth.slice("Bearer ".length).trim();
+  const claims = verifyToken(token);
+  return claims?.sub || null;
 }
 
 function findUserById(state, userId) {
@@ -455,6 +516,11 @@ async function handlePutState(request, response) {
 }
 
 async function handleLogin(request, response) {
+  const ip = request.socket?.remoteAddress || "unknown";
+  if (!checkLoginRateLimit(ip)) {
+    json(response, 429, { error: "too_many_attempts", message: "Trop de tentatives. Réessayez dans 15 minutes." });
+    return;
+  }
   const body = await readBody(request);
   const state = await loadState();
   const email = String(body.email || "").trim().toLowerCase();
@@ -464,6 +530,7 @@ async function handleLogin(request, response) {
     json(response, 401, { error: "invalid_credentials", message: "Identifiants invalides." });
     return;
   }
+  resetLoginRateLimit(ip);
   const accessToken = signToken(user);
   json(response, 200, {
     accessToken,
@@ -499,7 +566,7 @@ async function handleRegister(request, response) {
     id: randomId("usr"),
     name: String(body.name || email).trim(),
     email,
-    role: String(body.role || "student").trim() || "student",
+    role: "student", // Rôle forcé : seul un admin peut élever un rôle
     bio: "",
     avatar: String((body.name || email)).split(" ").filter(Boolean).slice(0, 2).map((item) => item[0]?.toUpperCase()).join(""),
     createdAt: new Date().toISOString(),
@@ -780,10 +847,14 @@ async function handleBusinessEvent(request, response) {
 const server = http.createServer(async (request, response) => {
   try {
     if (request.method === "OPTIONS") {
+      const origin = request.headers.origin || "";
+      const allowedOrigin = ALLOWED_ORIGIN || origin || "*";
       response.writeHead(204, {
-        "Access-Control-Allow-Origin": "*",
+        "Access-Control-Allow-Origin": allowedOrigin,
         "Access-Control-Allow-Headers": "Content-Type, Authorization",
-        "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS"
+        "Access-Control-Allow-Methods": "GET, POST, PUT, OPTIONS",
+        "X-Content-Type-Options": "nosniff",
+        "X-Frame-Options": "DENY"
       });
       response.end();
       return;
@@ -806,6 +877,10 @@ const server = http.createServer(async (request, response) => {
     return notFound(response);
   } catch (error) {
     console.error(error);
+    if (error.message === "payload_too_large") {
+      json(response, 413, { error: "payload_too_large", message: "Corps de la requête trop volumineux." });
+      return;
+    }
     json(response, 500, {
       error: "internal_error",
       message: error.message || "Erreur interne"
