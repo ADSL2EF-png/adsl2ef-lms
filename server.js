@@ -198,15 +198,28 @@ async function serveStatic(request, response) {
     const origin = request.headers.origin || "";
     const allowedOrigin = ALLOWED_ORIGIN || origin || "*";
 
-    response.writeHead(200, {
+    const headers = {
       "Content-Type": contentType,
       "X-Content-Type-Options": "nosniff",
       "X-Frame-Options": "DENY",
       "Referrer-Policy": "no-referrer",
       "Access-Control-Allow-Origin": allowedOrigin,
-      // Cache longue durée pour assets, pas pour HTML
       "Cache-Control": ext === ".html" ? "no-cache" : "public, max-age=31536000, immutable"
-    });
+    };
+
+    // CSP uniquement sur les pages HTML
+    if (ext === ".html") {
+      headers["Content-Security-Policy"] =
+        "default-src 'self'; " +
+        "script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; " +
+        "style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; " +
+        "font-src 'self' https://fonts.gstatic.com; " +
+        "img-src 'self' https://images.unsplash.com data: blob:; " +
+        "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://adsl2ef-lms-production.up.railway.app; " +
+        "frame-ancestors 'none';";
+    }
+
+    response.writeHead(200, headers);
     response.end(content);
   } catch {
     json(response, 404, { error: "not_found" });
