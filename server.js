@@ -72,6 +72,56 @@ const FLOOZ_MERCHANT_ID = process.env.ADSL2EF_FLOOZ_MERCHANT_ID || "";
 const FLOOZ_CALLBACK_URL = process.env.ADSL2EF_FLOOZ_CALLBACK_URL || "";
 const FLOOZ_RETURN_URL = process.env.ADSL2EF_FLOOZ_RETURN_URL || "";
 const FLOOZ_CANCEL_URL = process.env.ADSL2EF_FLOOZ_CANCEL_URL || "";
+
+// ─── Supabase (base de données persistante) ───────────────────────────────
+const SUPABASE_URL = process.env.ADSL2EF_SUPABASE_URL || "";
+const SUPABASE_SERVICE_KEY = process.env.ADSL2EF_SUPABASE_SERVICE_KEY || "";
+
+async function supabaseFetch(path, options = {}) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) throw new Error("Supabase non configuré");
+  const url = `${SUPABASE_URL}/rest/v1${path}`;
+  const res = await fetch(url, {
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      "apikey": SUPABASE_SERVICE_KEY,
+      "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`,
+      "Prefer": options.prefer || "return=representation",
+      ...(options.headers || {})
+    }
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(`Supabase error ${res.status}: ${err}`);
+  }
+  const text = await res.text();
+  return text ? JSON.parse(text) : null;
+}
+
+// Stockage de l'état LMS dans une table Supabase simple (clé/valeur)
+async function loadStateFromSupabase() {
+  try {
+    const rows = await supabaseFetch("/lms_state?key=eq.main&select=value", { prefer: "return=representation" });
+    if (rows && rows.length > 0) return JSON.parse(rows[0].value);
+    return null;
+  } catch (err) {
+    console.warn("[Supabase] loadState failed:", err.message);
+    return null;
+  }
+}
+
+async function saveStateToSupabase(state) {
+  try {
+    await supabaseFetch("/lms_state", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=minimal",
+      headers: { "Prefer": "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({ key: "main", value: JSON.stringify(state), updated_at: new Date().toISOString() })
+    });
+  } catch (err) {
+    console.warn("[Supabase] saveState failed:", err.message);
+  }
+}
 const DATA_DIR = path.join(__dirname, "data");
 const STATE_FILE = path.join(DATA_DIR, "state.json");
 const EVENTS_FILE = path.join(DATA_DIR, "events.log");
@@ -323,6 +373,29 @@ async function ensureDataFiles() {
 
 async function loadState() {
   if (inMemoryState) return inMemoryState;
+
+  // Essayer Supabase d'abord
+  if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
+    const sbState = await loadStateFromSupabase();
+    if (sbState) {
+      sbState.users = ensureArray(sbState.users);
+      sbState.courses = ensureArray(sbState.courses);
+      sbState.activities = ensureArray(sbState.activities);
+      sbState.questionBank = ensureArray(sbState.questionBank);
+      sbState.paymentRecords = ensureArray(sbState.paymentRecords);
+      sbState.submissions = ensureArray(sbState.submissions);
+      sbState.attendanceSessions = ensureArray(sbState.attendanceSessions);
+      sbState.notifications = ensureArray(sbState.notifications);
+      sbState.activityLog = ensureArray(sbState.activityLog);
+      sbState.announcements = ensureArray(sbState.announcements);
+      sbState.messages = ensureArray(sbState.messages);
+      sbState.forumThreads = ensureArray(sbState.forumThreads);
+      inMemoryState = sbState;
+      return inMemoryState;
+    }
+  }
+
+  // Fallback fichier local
   await ensureDataFiles();
   const raw = await fsp.readFile(STATE_FILE, "utf8");
   const parsed = JSON.parse(raw);
@@ -339,12 +412,28 @@ async function loadState() {
   parsed.messages = ensureArray(parsed.messages);
   parsed.forumThreads = ensureArray(parsed.forumThreads);
   inMemoryState = parsed;
+
+  // Sauvegarder dans Supabase pour les prochains démarrages
+  if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
+    await saveStateToSupabase(inMemoryState);
+  }
+
   return inMemoryState;
 }
 
 async function saveState(nextState) {
   inMemoryState = nextState;
-  await fsp.writeFile(STATE_FILE, JSON.stringify(nextState, null, 2), "utf8");
+  // Sauvegarder dans Supabase (persistant)
+  if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
+    await saveStateToSupabase(nextState);
+  }
+  // Aussi sauvegarder localement si possible
+  try {
+    await fsp.mkdir(DATA_DIR, { recursive: true });
+    await fsp.writeFile(STATE_FILE, JSON.stringify(nextState, null, 2), "utf8");
+  } catch {
+    // Filesystem éphémère sur Railway — pas critique
+  }
 }
 
 async function appendEvent(event) {
