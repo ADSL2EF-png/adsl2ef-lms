@@ -1,7 +1,7 @@
-﻿const STORAGE_KEY = "adsl2ef-lms-v1";
+const STORAGE_KEY = "adsl2ef-lms-v1";
 
 const roleLabels = { student: "Apprenant", teacher: "Enseignant", admin: "Administrateur" };
-const statusLabels = { draft: "Brouillon", published: "Publié", archived: "Archivé", submitted: "Soumis", reviewed: "Corrigé", pending: "En attente", graded: "Noté" };
+const statusLabels = { draft: "Brouillon", published: "Publié", archived: "Archivé", submitted: "Soumis", reviewed: "Corrigé", pending: "En attente", graded: "Noté", pending_review: "En attente de validation" };
 // Les identifiants Supabase sont configurés dans le panneau d'administration
 // (Paramètres → Persistance → Supabase) et stockés dans localStorage.
 // Ne jamais coder ces valeurs en dur dans ce fichier.
@@ -47,9 +47,9 @@ const starterData = {
       merchantFlooz: ""
     },
     persistence: {
-      mode: "supabase",
-      apiBaseUrl: "",
-      apiToken: "",
+      mode: "api",
+      apiBaseUrl: "https://adsl2ef-lms-production.up.railway.app",
+      apiToken: "adsl2ef-prod-2ef8a3c7f1b94d2e6a05f8c3d7e1b9a4",
       healthPath: "/health",
       apiSnapshotPath: "/lms/state",
       authMePath: "/auth/me",
@@ -3468,6 +3468,162 @@ function renderAuditLog(limit = 8) {
   return items.map((item) => `<article class="feed-item"><h3>${escapeHtml(item.label)}</h3><div class="tiny">${formatDate(item.createdAt)}</div></article>`).join("");
 }
 
+// ─── Fonctions d'approbation admin ────────────────────────────────────────
+
+function approveUser(userId) {
+  const user = state.users.find((u) => u.id === userId);
+  if (!user) return;
+  user.approvalStatus = "approved";
+  addNotification({ userId, title: "Compte activé ✅", message: "Votre compte ADSL-2EF a été validé. Vous pouvez maintenant vous connecter.", level: "success" });
+  saveState();
+  render();
+}
+
+function rejectUser(userId) {
+  const user = state.users.find((u) => u.id === userId);
+  if (!user) return;
+  user.approvalStatus = "rejected";
+  addNotification({ userId, title: "Accès refusé", message: "Votre demande d'accès à ADSL-2EF a été refusée. Contactez l'administration.", level: "warning" });
+  saveState();
+  render();
+}
+
+function approveCourse(courseId) {
+  const course = getCourseById(courseId);
+  if (!course) return;
+  course.status = "published";
+  if (course.teacherId) addNotification({ userId: course.teacherId, title: "Cours publié ✅", message: `Votre cours "${course.title}" a été validé et publié sur la plateforme.`, level: "success" });
+  saveState();
+  render();
+}
+
+function rejectCourse(courseId) {
+  const course = getCourseById(courseId);
+  if (!course) return;
+  course.status = "draft";
+  if (course.teacherId) addNotification({ userId: course.teacherId, title: "Cours refusé", message: `Votre cours "${course.title}" n'a pas été validé. Contactez l'administration pour plus de détails.`, level: "warning" });
+  saveState();
+  render();
+}
+
+function approveEnrollment(enrollmentId) {
+  if (!state.pendingEnrollments) return;
+  const enrollment = state.pendingEnrollments.find((e) => e.id === enrollmentId);
+  if (!enrollment) return;
+  const course = getCourseById(enrollment.courseId);
+  if (course && !course.enrolledUserIds.includes(enrollment.userId)) {
+    course.enrolledUserIds.push(enrollment.userId);
+  }
+  state.pendingEnrollments = state.pendingEnrollments.filter((e) => e.id !== enrollmentId);
+  addNotification({ userId: enrollment.userId, title: "Inscription validée ✅", message: `Votre inscription au cours "${course?.title || ""}" a été approuvée.`, level: "success" });
+  saveState();
+  render();
+}
+
+function rejectEnrollment(enrollmentId) {
+  if (!state.pendingEnrollments) return;
+  const enrollment = state.pendingEnrollments.find((e) => e.id === enrollmentId);
+  if (!enrollment) return;
+  const course = getCourseById(enrollment.courseId);
+  state.pendingEnrollments = state.pendingEnrollments.filter((e) => e.id !== enrollmentId);
+  addNotification({ userId: enrollment.userId, title: "Inscription refusée", message: `Votre demande d'inscription au cours "${course?.title || ""}" a été refusée.`, level: "warning" });
+  saveState();
+  render();
+}
+
+function renderPendingApprovalsPanel() {
+  const pendingUsers = state.users.filter((u) => u.approvalStatus === "pending");
+  const pendingCourses = state.courses.filter((c) => c.status === "pending_review");
+  const pendingEnrollments = (state.pendingEnrollments || []).map((e) => ({
+    ...e,
+    user: state.users.find((u) => u.id === e.userId),
+    course: getCourseById(e.courseId)
+  }));
+
+  if (!pendingUsers.length && !pendingCourses.length && !pendingEnrollments.length) return "";
+
+  return `
+    <section class="panel" style="margin-bottom:18px;border:2px solid #f59e0b">
+      <div class="toolbar" style="justify-content:space-between">
+        <div>
+          <h2 class="section-title">⏳ Approbations en attente</h2>
+          <p class="section-subtitle">${pendingUsers.length + pendingCourses.length + pendingEnrollments.length} élément(s) à valider</p>
+        </div>
+      </div>
+
+      ${pendingUsers.length ? `
+        <h3 style="margin:18px 0 8px;font-size:14px;font-weight:700;text-transform:uppercase;opacity:.6">Nouveaux comptes (${pendingUsers.length})</h3>
+        <div class="table-card">
+          <table style="width:100%">
+            <thead><tr><th>Nom</th><th>Email</th><th>Rôle</th><th>Date</th><th>Actions</th></tr></thead>
+            <tbody>
+              ${pendingUsers.map((u) => `
+                <tr>
+                  <td>${escapeHtml(u.name)}</td>
+                  <td>${escapeHtml(u.email)}</td>
+                  <td><span class="badge">${escapeHtml(u.role)}</span></td>
+                  <td>${u.createdAt ? new Date(u.createdAt).toLocaleDateString("fr-FR") : "-"}</td>
+                  <td>
+                    <button class="btn-primary" style="padding:4px 12px;font-size:12px" onclick="approveUser('${u.id}')">✅ Valider</button>
+                    <button class="btn-ghost" style="padding:4px 12px;font-size:12px;margin-left:6px" onclick="rejectUser('${u.id}')">❌ Refuser</button>
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      ` : ""}
+
+      ${pendingEnrollments.length ? `
+        <h3 style="margin:18px 0 8px;font-size:14px;font-weight:700;text-transform:uppercase;opacity:.6">Inscriptions aux cours (${pendingEnrollments.length})</h3>
+        <div class="table-card">
+          <table style="width:100%">
+            <thead><tr><th>Apprenant</th><th>Cours</th><th>Date</th><th>Actions</th></tr></thead>
+            <tbody>
+              ${pendingEnrollments.map((e) => `
+                <tr>
+                  <td>${escapeHtml(e.user?.name || "Inconnu")}</td>
+                  <td>${escapeHtml(e.course?.title || "Inconnu")}</td>
+                  <td>${e.requestedAt ? new Date(e.requestedAt).toLocaleDateString("fr-FR") : "-"}</td>
+                  <td>
+                    <button class="btn-primary" style="padding:4px 12px;font-size:12px" onclick="approveEnrollment('${e.id}')">✅ Valider</button>
+                    <button class="btn-ghost" style="padding:4px 12px;font-size:12px;margin-left:6px" onclick="rejectEnrollment('${e.id}')">❌ Refuser</button>
+                  </td>
+                </tr>
+              `).join("")}
+            </tbody>
+          </table>
+        </div>
+      ` : ""}
+
+      ${pendingCourses.length ? `
+        <h3 style="margin:18px 0 8px;font-size:14px;font-weight:700;text-transform:uppercase;opacity:.6">Cours soumis pour publication (${pendingCourses.length})</h3>
+        <div class="table-card">
+          <table style="width:100%">
+            <thead><tr><th>Titre</th><th>Enseignant</th><th>Catalogue</th><th>Actions</th></tr></thead>
+            <tbody>
+              ${pendingCourses.map((c) => {
+                const teacher = state.users.find((u) => u.id === c.teacherId);
+                return `
+                  <tr>
+                    <td>${escapeHtml(c.title)}</td>
+                    <td>${escapeHtml(teacher?.name || "Inconnu")}</td>
+                    <td>${escapeHtml(c.catalogType || "school")}</td>
+                    <td>
+                      <button class="btn-primary" style="padding:4px 12px;font-size:12px" onclick="approveCourse('${c.id}')">✅ Publier</button>
+                      <button class="btn-ghost" style="padding:4px 12px;font-size:12px;margin-left:6px" onclick="rejectCourse('${c.id}')">❌ Refuser</button>
+                    </td>
+                  </tr>
+                `;
+              }).join("")}
+            </tbody>
+          </table>
+        </div>
+      ` : ""}
+    </section>
+  `;
+}
+
 function renderAdminDashboard() {
   const teachers = state.users.filter((user) => user.role === "teacher");
   const students = state.users.filter((user) => user.role === "student");
@@ -3477,6 +3633,7 @@ function renderAdminDashboard() {
     ? Math.round(graded.reduce((sum, submission) => sum + (submission.score / Math.max(submission.maxPoints || 1, 1)) * 100, 0) / graded.length)
     : 0;
   return `
+    ${renderPendingApprovalsPanel()}
     <section class="analytics-grid" style="margin-bottom:18px">
       ${metricCard("Utilisateurs", state.users.length, "Base complète")}
       ${metricCard("Enseignants", teachers.length, "Production de contenu")}
@@ -4142,26 +4299,37 @@ async function enrollUser(courseId, userId) {
   const actor = getCurrentUser();
   if (!course || course.enrolledUserIds.includes(userId)) return;
   if (actor && !canManageEnrollment(course, actor) && actor.id !== userId) return;
+
+  // Si c'est un apprenant qui s'inscrit lui-même → mise en attente
+  const enrollingUser = state.users.find((u) => u.id === userId);
+  if (actor?.id === userId && actor?.role !== "admin") {
+    // Ajouter à la liste des inscriptions en attente
+    if (!state.pendingEnrollments) state.pendingEnrollments = [];
+    const alreadyPending = state.pendingEnrollments.some((e) => e.courseId === courseId && e.userId === userId);
+    if (alreadyPending) { alert("Votre demande d'inscription est déjà en attente de validation."); return; }
+    state.pendingEnrollments.push({ id: crypto.randomUUID(), courseId, userId, requestedAt: nowISO() });
+    // Notifier les admins
+    state.users.filter((u) => u.role === "admin").forEach((admin) => {
+      addNotification({ userId: admin.id, title: "Demande d'inscription en attente", message: `${enrollingUser?.name || "Un apprenant"} souhaite s'inscrire au cours "${course.title}".`, level: "warning" });
+    });
+    addNotification({ userId, title: "Inscription en attente", message: `Votre demande d'inscription au cours "${course.title}" est en cours de validation.`, level: "primary" });
+    saveState();
+    alert("Votre demande d'inscription a été envoyée. L'administrateur la validera prochainement.");
+    return;
+  }
+
+  // Admin qui inscrit directement → inscription immédiate
   course.enrolledUserIds.push(userId);
   if (shouldUseSupabasePersistence()) {
     try {
-      await supabaseUpsert("enrollments", {
-        course_id: courseId,
-        profile_id: userId,
-        status: "active",
-        enrolled_at: nowISO()
-      }, "course_id,profile_id");
+      await supabaseUpsert("enrollments", { course_id: courseId, profile_id: userId, status: "active", enrolled_at: nowISO() }, "course_id,profile_id");
     } catch (error) {
       console.warn("Supabase enrollment sync ignored:", error);
     }
   }
-  addNotification({ userId, title: "Inscription confirmee", message: `Vous etes maintenant inscrit au cours ${course.title}.`, level: "success" });
+  addNotification({ userId, title: "Inscription confirmée", message: `Vous êtes maintenant inscrit au cours ${course.title}.`, level: "success" });
   addLog(userId, `Inscription au cours ${course.title}`);
-  await publishPlatformEvent("enrollment.created", {
-    courseId,
-    userId,
-    actorId: actor?.id || userId
-  });
+  await publishPlatformEvent("enrollment.created", { courseId, userId, actorId: actor?.id || userId });
   saveState();
 }
 
@@ -5225,6 +5393,16 @@ async function handleLogin(event) {
       alert("Identifiants invalides.");
       return;
     }
+    // Bloquer les comptes en attente de validation
+    if (user.approvalStatus === "pending") {
+      alert("Votre compte est en attente de validation par l'administrateur. Vous serez notifié dès que votre accès sera activé.");
+      return;
+    }
+    // Bloquer les comptes rejetés
+    if (user.approvalStatus === "rejected") {
+      alert("Votre demande d'accès a été refusée. Contactez l'administration ADSL-2EF pour plus d'informations.");
+      return;
+    }
     clearFailedLoginAttempts(email);
     state.ui.screen = "dashboard";
     closeModal();
@@ -5244,14 +5422,25 @@ async function handleRegister(event) {
   const password = String(formData.get("password"));
   const requestedRole = String(formData.get("role")).trim().toLowerCase();
   const role = isRoleAllowedForPublicRegistration(requestedRole) ? requestedRole : "student";
+
   const registerLocally = async () => {
     if (state.users.some((user) => user.email.toLowerCase() === email)) return null;
-    const user = { id: crypto.randomUUID(), name, email, password: await secureLocalPassword(password), role, bio: "Nouveau compte plateforme.", avatar: initials(name), createdAt: nowISO() };
+    const user = {
+      id: crypto.randomUUID(), name, email,
+      password: await secureLocalPassword(password),
+      role, bio: "Nouveau compte plateforme.", avatar: initials(name),
+      createdAt: nowISO(),
+      approvalStatus: "pending" // ← nouveau compte en attente de validation admin
+    };
     state.users.push(user);
-    state.currentUserId = user.id;
-    state.session = { accessToken: "", authProvider: "local", lastAuthAt: nowISO() };
+    // Notifier tous les admins
+    state.users.filter((u) => u.role === "admin").forEach((admin) => {
+      addNotification({ userId: admin.id, title: "Nouvelle inscription en attente", message: `${name} (${role}) demande l'accès à la plateforme.`, level: "warning" });
+    });
+    // NE PAS connecter l'utilisateur — il doit attendre la validation
     return user;
   };
+
   try {
     let user = null;
     if (shouldUseSupabasePersistence()) {
@@ -5288,10 +5477,16 @@ async function handleRegister(event) {
       alert("Cet email existe déjà.");
       return;
     }
-    state.ui.screen = "dashboard";
-    addNotification({ userId: user.id, title: "Bienvenue sur ADSL-2EF", message: "Votre compte est prêt. Explorez votre tableau de bord personnalisé.", level: "success" });
     closeModal();
     saveState();
+    // Afficher message d'attente de validation
+    openModal(`
+      <div style="text-align:center;padding:24px">
+        <div style="font-size:48px;margin-bottom:16px">⏳</div>
+        <h2>Inscription reçue !</h2>
+        <p class="section-subtitle" style="margin-top:12px">Votre demande d'accès a été transmise à l'administrateur ADSL-2EF.<br>Vous recevrez une confirmation dès que votre compte sera validé.</p>
+      </div>
+    `);
   } catch (error) {
     console.warn("Register error:", error);
     alert("Inscription impossible pour le moment.");
@@ -5332,6 +5527,12 @@ async function handleCourseCreate(event) {
   const formData = new FormData(event.currentTarget);
   const category = String(formData.get("category")).trim();
   const catalogType = String(formData.get("catalogType") || (category === "Formation Pro" ? "pro" : "school"));
+  const actor = getCurrentUser();
+  const isAdmin = actor?.role === "admin";
+  // Un enseignant soumet pour validation, seul un admin peut publier directement
+  const requestedStatus = String(formData.get("status"));
+  const finalStatus = isAdmin ? requestedStatus : (requestedStatus === "published" ? "pending_review" : requestedStatus);
+
   const newCourse = {
     id: crypto.randomUUID(),
     title: String(formData.get("title")).trim(),
@@ -5340,7 +5541,7 @@ async function handleCourseCreate(event) {
     description: String(formData.get("description")).trim(),
     image: String(formData.get("image")).trim() || "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80",
     teacherId: String(formData.get("teacherId")),
-    status: String(formData.get("status")),
+    status: finalStatus,
     audience: String(formData.get("audience")).trim(),
     duration: String(formData.get("duration")).trim(),
     price: catalogType === "pro" ? 45000 : 15000,
@@ -5366,6 +5567,12 @@ async function handleCourseCreate(event) {
   }
   const teacher = getUserById(newCourse.teacherId);
   if (teacher) addNotification({ userId: teacher.id, title: "Nouveau cours assigne", message: `Le cours ${newCourse.title} est disponible dans votre espace enseignant.`, level: "primary" });
+  // Notifier les admins si le cours est en attente de validation
+  if (newCourse.status === "pending_review") {
+    state.users.filter((u) => u.role === "admin").forEach((admin) => {
+      addNotification({ userId: admin.id, title: "Cours en attente de validation", message: `"${newCourse.title}" a été soumis pour publication par ${teacher?.name || "un enseignant"}.`, level: "warning" });
+    });
+  }
   addLog(getCurrentUser().id, `Cours créé - ${newCourse.title}`);
   const remote = await publishPlatformEvent("course.created", { course: newCourse });
   mergeRemoteEntity(newCourse, extractRemoteEntity(remote, "course"));
