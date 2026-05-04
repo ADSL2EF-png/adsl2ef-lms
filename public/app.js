@@ -3477,8 +3477,9 @@ function approveUser(userId) {
   if (!user) return;
   user.approvalStatus = "approved";
   addNotification({ userId, title: "Compte activé ✅", message: "Votre compte ADSL-2EF a été validé. Vous pouvez maintenant vous connecter.", level: "success" });
+  persistState(state);
+  syncApiSnapshot().then(() => render()).catch(() => render());
   saveState();
-  render();
 }
 
 function rejectUser(userId) {
@@ -3486,8 +3487,9 @@ function rejectUser(userId) {
   if (!user) return;
   user.approvalStatus = "rejected";
   addNotification({ userId, title: "Accès refusé", message: "Votre demande d'accès à ADSL-2EF a été refusée. Contactez l'administration.", level: "warning" });
+  persistState(state);
+  syncApiSnapshot().then(() => render()).catch(() => render());
   saveState();
-  render();
 }
 
 function approveCourse(courseId) {
@@ -3495,8 +3497,9 @@ function approveCourse(courseId) {
   if (!course) return;
   course.status = "published";
   if (course.teacherId) addNotification({ userId: course.teacherId, title: "Cours publié ✅", message: `Votre cours "${course.title}" a été validé et publié sur la plateforme.`, level: "success" });
+  persistState(state);
+  syncApiSnapshot().then(() => render()).catch(() => render());
   saveState();
-  render();
 }
 
 function rejectCourse(courseId) {
@@ -3504,8 +3507,9 @@ function rejectCourse(courseId) {
   if (!course) return;
   course.status = "draft";
   if (course.teacherId) addNotification({ userId: course.teacherId, title: "Cours refusé", message: `Votre cours "${course.title}" n'a pas été validé. Contactez l'administration pour plus de détails.`, level: "warning" });
+  persistState(state);
+  syncApiSnapshot().then(() => render()).catch(() => render());
   saveState();
-  render();
 }
 
 function approveEnrollment(enrollmentId) {
@@ -4595,7 +4599,14 @@ function openCourseBuilder() {
     <p class="section-subtitle">Le cours est créé avec un premier module et une première leçon pour accélérer la mise en place.</p>
     <form id="course-form" class="form-grid" style="margin-top:18px">
       <div class="field"><label for="course-title">Titre</label><input id="course-title" name="title" required></div>
-      <div class="field"><label for="course-category">Catégorie</label><input id="course-category" name="category" required placeholder="Lycée, Formation Pro..."></div>
+      <div class="field"><label for="course-category">Catégorie</label><select id="course-category" name="category" required>
+        <option value="">-- Choisir --</option>
+        <option value="Collège">Collège</option>
+        <option value="Lycée Moderne">Lycée Moderne</option>
+        <option value="Technique">Lycée Technique</option>
+        <option value="Adultes">Candidats Libres (BAC/BEPC)</option>
+        <option value="Formation Pro">Formation Professionnelle</option>
+      </select></div>
       <div class="field"><label for="course-audience">Audience</label><input id="course-audience" name="audience" required placeholder="Terminale D, Enseignants..."></div>
       <div class="field"><label for="course-duration">Durée</label><input id="course-duration" name="duration" required placeholder="8 semaines"></div>
       <div class="field full"><label for="course-image">Image de couverture</label><input id="course-image" name="image" placeholder="https://..."></div>
@@ -4654,7 +4665,13 @@ function openCourseEditor(courseId) {
     <h2>Modifier le cours</h2>
     <form id="course-edit-form" data-course-id="${course.id}" class="form-grid" style="margin-top:18px">
       <div class="field"><label for="edit-course-title">Titre</label><input id="edit-course-title" name="title" value="${escapeHtml(course.title)}" required></div>
-      <div class="field"><label for="edit-course-category">Catégorie</label><input id="edit-course-category" name="category" value="${escapeHtml(course.category)}" required></div>
+      <div class="field"><label for="edit-course-category">Catégorie</label><select id="edit-course-category" name="category" required>
+        <option value="Collège" ${course.category === "Collège" ? "selected" : ""}>Collège</option>
+        <option value="Lycée Moderne" ${course.category === "Lycée Moderne" ? "selected" : ""}>Lycée Moderne</option>
+        <option value="Technique" ${course.category === "Technique" ? "selected" : ""}>Lycée Technique</option>
+        <option value="Adultes" ${course.category === "Adultes" ? "selected" : ""}>Candidats Libres (BAC/BEPC)</option>
+        <option value="Formation Pro" ${course.category === "Formation Pro" ? "selected" : ""}>Formation Professionnelle</option>
+      </select></div>
       <div class="field"><label for="edit-course-audience">Audience</label><input id="edit-course-audience" name="audience" value="${escapeHtml(course.audience || "")}" required></div>
       <div class="field"><label for="edit-course-duration">Durée</label><input id="edit-course-duration" name="duration" value="${escapeHtml(course.duration || "")}" required></div>
       <div class="field full"><label for="edit-course-image">Image</label><input id="edit-course-image" name="image" value="${escapeHtml(course.image || "")}"></div>
@@ -6745,3 +6762,4 @@ window.removeLesson = removeLesson;
 window.toggleLessonCompletion = toggleLessonCompletion;
 window.setAdminFilter = setAdminFilter;
 window.removeUser = removeUser;
+
