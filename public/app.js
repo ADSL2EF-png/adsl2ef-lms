@@ -4615,6 +4615,15 @@ function openCourseBuilder() {
       <div class="field"><label for="course-status">Statut</label><select id="course-status" name="status"><option value="draft">Brouillon</option><option value="published">Publié</option></select></div>
       <div class="field"><label for="course-catalog-type">Type de catalogue</label><select id="course-catalog-type" name="catalogType"><option value="school">École Numérique</option><option value="pro">Formation Pro</option></select></div>
       <div class="field"><label for="course-price">Prix (FCFA) — 0 = gratuit</label><input id="course-price" name="price" type="number" min="0" placeholder="Ex: 15000"></div>
+      <div class="field"><label for="course-pricing-label">Libellé du prix</label><select id="course-pricing-label" name="pricingLabel">
+        <option value="par trimestre">par trimestre</option>
+        <option value="par mois">par mois</option>
+        <option value="par an">par an</option>
+        <option value="par cohorte">par cohorte</option>
+        <option value="programme complet">programme complet</option>
+        <option value="accès à vie">accès à vie</option>
+        <option value="gratuit">gratuit</option>
+      </select></div>
       <div class="field full"><button class="btn-primary" type="submit">Créer le cours</button></div>
     </form>
   `);
@@ -4679,6 +4688,16 @@ function openCourseEditor(courseId) {
       <div class="field"><label for="edit-course-teacher">Enseignant</label><select id="edit-course-teacher" name="teacherId">${teachers.map((teacher) => `<option value="${teacher.id}" ${teacher.id === course.teacherId ? "selected" : ""}>${escapeHtml(teacher.name)}</option>`).join("")}</select></div>
       <div class="field"><label for="edit-course-status">Statut</label><select id="edit-course-status" name="status"><option value="draft" ${course.status === "draft" ? "selected" : ""}>Brouillon</option><option value="published" ${course.status === "published" ? "selected" : ""}>Publié</option></select></div>
       <div class="field"><label for="edit-course-catalog-type">Type de catalogue</label><select id="edit-course-catalog-type" name="catalogType"><option value="school" ${(course.catalogType || "school") === "school" ? "selected" : ""}>École Numérique</option><option value="pro" ${course.catalogType === "pro" ? "selected" : ""}>Formation Pro</option></select></div>
+      <div class="field"><label for="edit-course-price">Prix (FCFA) — 0 = gratuit</label><input id="edit-course-price" name="price" type="number" min="0" value="${course.price || 0}"></div>
+      <div class="field"><label for="edit-course-pricing-label">Libellé du prix</label><select id="edit-course-pricing-label" name="pricingLabel">
+        <option value="par trimestre" ${course.pricingLabel === "par trimestre" ? "selected" : ""}>par trimestre</option>
+        <option value="par mois" ${course.pricingLabel === "par mois" ? "selected" : ""}>par mois</option>
+        <option value="par an" ${course.pricingLabel === "par an" ? "selected" : ""}>par an</option>
+        <option value="par cohorte" ${course.pricingLabel === "par cohorte" ? "selected" : ""}>par cohorte</option>
+        <option value="programme complet" ${course.pricingLabel === "programme complet" ? "selected" : ""}>programme complet</option>
+        <option value="accès à vie" ${course.pricingLabel === "accès à vie" ? "selected" : ""}>accès à vie</option>
+        <option value="" ${!course.pricingLabel ? "selected" : ""}>gratuit</option>
+      </select></div>
       <div class="field full"><button class="btn-primary" type="submit">Enregistrer</button></div>
     </form>
   `);
@@ -5606,7 +5625,7 @@ async function handleCourseCreate(event) {
     audience: String(formData.get("audience")).trim(),
     duration: String(formData.get("duration")).trim(),
     price: Number(formData.get("price")) || (catalogType === "pro" ? 45000 : 15000),
-    pricingLabel: catalogType === "pro" ? "par cohorte" : "par trimestre",
+    pricingLabel: String(formData.get("pricingLabel") || (catalogType === "pro" ? "par cohorte" : "par trimestre")),
     salesTag: catalogType === "pro" ? "Certifiant" : "Best-seller",
     sellingPoints: catalogType === "pro"
       ? ["Templates pedagogiques", "Cas pratiques", "Suivi des cohortes", "Attestation finale"]
@@ -5649,6 +5668,8 @@ async function handleCourseEdit(event) {
   course.title = String(formData.get("title")).trim();
   course.category = String(formData.get("category")).trim();
   course.catalogType = String(formData.get("catalogType") || (course.category === "Formation Pro" ? "pro" : "school"));
+  course.price = Number(formData.get("price")) || course.price || 0;
+  course.pricingLabel = String(formData.get("pricingLabel") || course.pricingLabel || "par trimestre");
   course.audience = String(formData.get("audience")).trim();
   course.duration = String(formData.get("duration")).trim();
   course.image = String(formData.get("image")).trim();
