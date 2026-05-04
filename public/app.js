@@ -700,7 +700,9 @@ async function loginWithApi(email, password) {
   const persistence = getPersistenceConfig();
   const payload = await apiRequest(persistence.authLoginPath, {
     method: "POST",
-    body: { email, password }
+    headers: { "Content-Type": "application/json" },
+    body: { email, password },
+    skipAuth: true
   });
   const user = normalizeRemoteUser(payload);
   if (!user) throw new Error("missing user payload");
@@ -4601,6 +4603,7 @@ function openCourseBuilder() {
       <div class="field"><label for="course-teacher">Enseignant</label><select id="course-teacher" name="teacherId">${teachers.map((teacher) => `<option value="${teacher.id}">${escapeHtml(teacher.name)}</option>`).join("")}</select></div>
       <div class="field"><label for="course-status">Statut</label><select id="course-status" name="status"><option value="draft">Brouillon</option><option value="published">Publié</option></select></div>
       <div class="field"><label for="course-catalog-type">Type de catalogue</label><select id="course-catalog-type" name="catalogType"><option value="school">École Numérique</option><option value="pro">Formation Pro</option></select></div>
+      <div class="field"><label for="course-price">Prix (FCFA) — 0 = gratuit</label><input id="course-price" name="price" type="number" min="0" placeholder="Ex: 15000"></div>
       <div class="field full"><button class="btn-primary" type="submit">Créer le cours</button></div>
     </form>
   `);
@@ -4971,11 +4974,31 @@ function openLessonBuilder(courseId, moduleId) {
     <h2>Ajouter une leçon</h2>
     <form id="lesson-form" data-course-id="${course.id}" data-module-id="${module.id}" class="form-grid" style="margin-top:18px">
       <div class="field full"><label for="lesson-title">Titre</label><input id="lesson-title" name="title" required></div>
-      <div class="field"><label for="lesson-type">Type</label><select id="lesson-type" name="type"><option value="reading">Lecture</option><option value="video">Vidéo</option><option value="pdf">PDF</option></select></div>
-      <div class="field"><label for="lesson-duration">Durée</label><input id="lesson-duration" name="duration" required placeholder="15 min"></div>
-      <div class="field full"><label for="lesson-content">Contenu</label><textarea id="lesson-content" name="content" required></textarea></div>
-      <div class="field full"><label for="lesson-resource-title">Ressource principale</label><input id="lesson-resource-title" name="resourceTitle" placeholder="Support PDF"></div>
-      <div class="field full"><label for="lesson-resource-url">Lien ressource</label><input id="lesson-resource-url" name="resourceUrl" placeholder="https://..."></div>
+      <div class="field"><label for="lesson-type">Type</label><select id="lesson-type" name="type">
+        <option value="reading">📄 Lecture / Texte</option>
+        <option value="video">🎬 Vidéo</option>
+        <option value="pdf">📑 PDF / Document</option>
+        <option value="quiz">🧠 Quiz</option>
+        <option value="audio">🎵 Audio</option>
+        <option value="link">🔗 Lien externe</option>
+      </select></div>
+      <div class="field"><label for="lesson-duration">Durée estimée</label><input id="lesson-duration" name="duration" required placeholder="15 min"></div>
+      <div class="field full"><label for="lesson-content">Contenu / Description</label><textarea id="lesson-content" name="content" placeholder="Décrivez le contenu de cette leçon..." required></textarea></div>
+      <div class="field full" style="background:#f8f9fa;padding:12px;border-radius:8px">
+        <label style="font-weight:700;margin-bottom:8px;display:block">📎 Ressource principale</label>
+        <div class="form-grid" style="gap:8px">
+          <div class="field"><label for="lesson-resource-title">Titre de la ressource</label><input id="lesson-resource-title" name="resourceTitle" placeholder="Ex: Support PDF, Lien vidéo..."></div>
+          <div class="field"><label for="lesson-resource-type">Type de ressource</label><select id="lesson-resource-type" name="resourceType">
+            <option value="link">🔗 Lien URL</option>
+            <option value="video">🎬 Vidéo (YouTube, Vimeo...)</option>
+            <option value="pdf">📑 PDF</option>
+            <option value="document">📄 Document</option>
+            <option value="audio">🎵 Audio</option>
+            <option value="image">🖼️ Image</option>
+          </select></div>
+          <div class="field full"><label for="lesson-resource-url">URL de la ressource</label><input id="lesson-resource-url" name="resourceUrl" placeholder="https://..."></div>
+        </div>
+      </div>
       <div class="field full"><button class="btn-primary" type="submit">Créer la leçon</button></div>
     </form>
   `);
@@ -4986,15 +5009,36 @@ function openLessonEditor(courseId, moduleId, lessonId) {
   const module = course?.modules.find((item) => item.id === moduleId);
   const lesson = module?.lessons.find((item) => item.id === lessonId);
   if (!course || !module || !lesson) return;
+  const res = lesson.resources?.[0];
   openModal(`
     <h2>Modifier la leçon</h2>
     <form id="lesson-edit-form" data-course-id="${course.id}" data-module-id="${module.id}" data-lesson-id="${lesson.id}" class="form-grid" style="margin-top:18px">
       <div class="field full"><label for="edit-lesson-title">Titre</label><input id="edit-lesson-title" name="title" value="${escapeHtml(lesson.title)}" required></div>
-      <div class="field"><label for="edit-lesson-type">Type</label><select id="edit-lesson-type" name="type"><option value="reading" ${lesson.type === "reading" ? "selected" : ""}>Lecture</option><option value="video" ${lesson.type === "video" ? "selected" : ""}>Vidéo</option><option value="pdf" ${lesson.type === "pdf" ? "selected" : ""}>PDF</option></select></div>
+      <div class="field"><label for="edit-lesson-type">Type</label><select id="edit-lesson-type" name="type">
+        <option value="reading" ${lesson.type === "reading" ? "selected" : ""}>📄 Lecture / Texte</option>
+        <option value="video" ${lesson.type === "video" ? "selected" : ""}>🎬 Vidéo</option>
+        <option value="pdf" ${lesson.type === "pdf" ? "selected" : ""}>📑 PDF / Document</option>
+        <option value="quiz" ${lesson.type === "quiz" ? "selected" : ""}>🧠 Quiz</option>
+        <option value="audio" ${lesson.type === "audio" ? "selected" : ""}>🎵 Audio</option>
+        <option value="link" ${lesson.type === "link" ? "selected" : ""}>🔗 Lien externe</option>
+      </select></div>
       <div class="field"><label for="edit-lesson-duration">Durée</label><input id="edit-lesson-duration" name="duration" value="${escapeHtml(lesson.duration || "")}" required></div>
-      <div class="field full"><label for="edit-lesson-content">Contenu</label><textarea id="edit-lesson-content" name="content" required>${escapeHtml(lesson.content || "")}</textarea></div>
-      <div class="field full"><label for="edit-lesson-resource-title">Ressource principale</label><input id="edit-lesson-resource-title" name="resourceTitle" value="${escapeHtml(lesson.resources?.[0]?.title || "")}"></div>
-      <div class="field full"><label for="edit-lesson-resource-url">Lien ressource</label><input id="edit-lesson-resource-url" name="resourceUrl" value="${escapeHtml(lesson.resources?.[0]?.url || "")}"></div>
+      <div class="field full"><label for="edit-lesson-content">Contenu / Description</label><textarea id="edit-lesson-content" name="content" required>${escapeHtml(lesson.content || "")}</textarea></div>
+      <div class="field full" style="background:#f8f9fa;padding:12px;border-radius:8px">
+        <label style="font-weight:700;margin-bottom:8px;display:block">📎 Ressource principale</label>
+        <div class="form-grid" style="gap:8px">
+          <div class="field"><label for="edit-lesson-resource-title">Titre</label><input id="edit-lesson-resource-title" name="resourceTitle" value="${escapeHtml(res?.title || "")}"></div>
+          <div class="field"><label for="edit-lesson-resource-type">Type</label><select id="edit-lesson-resource-type" name="resourceType">
+            <option value="link" ${(res?.type || "link") === "link" ? "selected" : ""}>🔗 Lien URL</option>
+            <option value="video" ${res?.type === "video" ? "selected" : ""}>🎬 Vidéo</option>
+            <option value="pdf" ${res?.type === "pdf" ? "selected" : ""}>📑 PDF</option>
+            <option value="document" ${res?.type === "document" ? "selected" : ""}>📄 Document</option>
+            <option value="audio" ${res?.type === "audio" ? "selected" : ""}>🎵 Audio</option>
+            <option value="image" ${res?.type === "image" ? "selected" : ""}>🖼️ Image</option>
+          </select></div>
+          <div class="field full"><label for="edit-lesson-resource-url">URL</label><input id="edit-lesson-resource-url" name="resourceUrl" value="${escapeHtml(res?.url || "")}"></div>
+        </div>
+      </div>
       <div class="field full"><button class="btn-primary" type="submit">Enregistrer</button></div>
     </form>
   `);
@@ -5544,7 +5588,7 @@ async function handleCourseCreate(event) {
     status: finalStatus,
     audience: String(formData.get("audience")).trim(),
     duration: String(formData.get("duration")).trim(),
-    price: catalogType === "pro" ? 45000 : 15000,
+    price: Number(formData.get("price")) || (catalogType === "pro" ? 45000 : 15000),
     pricingLabel: catalogType === "pro" ? "par cohorte" : "par trimestre",
     salesTag: catalogType === "pro" ? "Certifiant" : "Best-seller",
     sellingPoints: catalogType === "pro"
@@ -5977,13 +6021,14 @@ async function handleLessonCreate(event) {
   const formData = new FormData(event.currentTarget);
   const resourceTitle = String(formData.get("resourceTitle")).trim();
   const resourceUrl = String(formData.get("resourceUrl")).trim();
+  const resourceType = String(formData.get("resourceType") || "link").trim();
   const lesson = {
     id: crypto.randomUUID(),
     title: String(formData.get("title")).trim(),
     type: String(formData.get("type")).trim(),
     duration: String(formData.get("duration")).trim(),
     content: String(formData.get("content")).trim(),
-    resources: resourceTitle && resourceUrl ? [{ id: crypto.randomUUID(), title: resourceTitle, type: "link", url: resourceUrl }] : []
+    resources: resourceTitle && resourceUrl ? [{ id: crypto.randomUUID(), title: resourceTitle, type: resourceType, url: resourceUrl }] : []
   };
   module.lessons.push(lesson);
   if (shouldUseSupabasePersistence()) {
@@ -6014,11 +6059,12 @@ async function handleLessonEdit(event) {
   const formData = new FormData(event.currentTarget);
   const resourceTitle = String(formData.get("resourceTitle")).trim();
   const resourceUrl = String(formData.get("resourceUrl")).trim();
+  const resourceType = String(formData.get("resourceType") || "link").trim();
   lesson.title = String(formData.get("title")).trim();
   lesson.type = String(formData.get("type")).trim();
   lesson.duration = String(formData.get("duration")).trim();
   lesson.content = String(formData.get("content")).trim();
-  lesson.resources = resourceTitle && resourceUrl ? [{ id: crypto.randomUUID(), title: resourceTitle, type: "link", url: resourceUrl }] : [];
+  lesson.resources = resourceTitle && resourceUrl ? [{ id: lesson.resources?.[0]?.id || crypto.randomUUID(), title: resourceTitle, type: resourceType, url: resourceUrl }] : [];
   if (shouldUseSupabasePersistence()) {
     try {
       await supabaseUpsert("lessons", mapLessonToSupabaseRow(module.id, lesson, module.lessons.findIndex((item) => item.id === lesson.id)));
@@ -6699,4 +6745,3 @@ window.removeLesson = removeLesson;
 window.toggleLessonCompletion = toggleLessonCompletion;
 window.setAdminFilter = setAdminFilter;
 window.removeUser = removeUser;
-
