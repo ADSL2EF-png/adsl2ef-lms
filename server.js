@@ -265,7 +265,7 @@ async function serveStatic(request, response) {
         "style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; " +
         "font-src 'self' https://fonts.gstatic.com; " +
         "img-src 'self' https://images.unsplash.com data: blob:; " +
-        "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://adsl2ef-lms-production.up.railway.app; " +
+        "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://adsl2ef-lms-production.up.railway.app https://cdn.jsdelivr.net; " +
         "frame-ancestors 'none';";
     }
 
