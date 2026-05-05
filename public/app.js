@@ -433,14 +433,37 @@ function getEnvironmentPersistenceDefaults() {
 
 function applyEnvironmentPersistenceDefaults(nextState) {
   const overrides = getEnvironmentPersistenceDefaults();
-  if (!overrides) return nextState;
   const currentPersistence = nextState.config?.persistence || {};
+
+  // Forcer le mode API Railway pour tous les appareils (production)
+  const hostname = window.location.hostname || "";
+  const isProduction = hostname.includes("railway.app") || hostname.includes("adsl2ef");
+  if (isProduction) {
+    // Toujours utiliser Railway en production, quelle que soit la config stockée
+    if (!currentPersistence.apiBaseUrl || currentPersistence.mode !== "api") {
+      nextState.config.persistence = {
+        ...currentPersistence,
+        mode: "api",
+        apiBaseUrl: "https://adsl2ef-lms-production.up.railway.app",
+        apiToken: "adsl2ef-prod-2ef8a3c7f1b94d2e6a05f8c3d7e1b9a4",
+        apiSnapshotPath: "/lms/state",
+        authLoginPath: "/auth/login",
+        authRegisterPath: "/auth/register",
+        authMePath: "/auth/me",
+        summaryPath: "/lms/summary",
+        eventsReadPath: "/lms/events",
+        operationsPath: "/lms/events",
+        paymentInitPath: "/payments/init",
+        paymentStatusPath: "/payments/status"
+      };
+    }
+    return nextState;
+  }
+
+  if (!overrides) return nextState;
   const shouldAutoApply = !currentPersistence.apiBaseUrl && (!currentPersistence.mode || currentPersistence.mode === "local");
   if (!shouldAutoApply) return nextState;
-  nextState.config.persistence = {
-    ...currentPersistence,
-    ...overrides
-  };
+  nextState.config.persistence = { ...currentPersistence, ...overrides };
   return nextState;
 }
 
@@ -636,12 +659,12 @@ async function apiRequest(path, options = {}) {
   const persistence = getPersistenceConfig();
   try {
     setApiStatus("syncing", `Appel API ${options.method || "GET"} ${path}`);
+    const headers = options.skipAuth
+      ? { "Content-Type": "application/json", ...(options.headers || {}) }
+      : { ...getApiHeaders(), ...(options.headers || {}) };
     const response = await fetch(buildApiUrl(persistence.apiBaseUrl, path), {
       method: options.method || "GET",
-      headers: {
-        ...getApiHeaders(),
-        ...(options.headers || {})
-      },
+      headers,
       body: options.body ? JSON.stringify(options.body) : undefined
     });
     if (!response.ok) {
@@ -6783,4 +6806,3 @@ window.removeLesson = removeLesson;
 window.toggleLessonCompletion = toggleLessonCompletion;
 window.setAdminFilter = setAdminFilter;
 window.removeUser = removeUser;
-
