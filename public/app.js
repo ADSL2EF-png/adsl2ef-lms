@@ -1,4 +1,4 @@
-﻿const STORAGE_KEY = "adsl2ef-lms-v1";
+const STORAGE_KEY = "adsl2ef-lms-v1";
 
 const roleLabels = { student: "Apprenant", teacher: "Enseignant", admin: "Administrateur" };
 const statusLabels = { draft: "Brouillon", published: "Publié", archived: "Archivé", submitted: "Soumis", reviewed: "Corrigé", pending: "En attente", graded: "Noté", pending_review: "En attente de validation" };
@@ -1724,15 +1724,18 @@ async function publishPlatformEvent(type, payload = {}) {
   const persistence = getPersistenceConfig();
   if (!shouldUseApiPersistence()) return;
   try {
-    return await apiRequest(persistence.operationsPath, {
+    const response = await fetch(buildApiUrl(persistence.apiBaseUrl, persistence.operationsPath), {
       method: "POST",
-      body: {
+      headers: getApiHeaders(true), // token API
+      body: JSON.stringify({
         type,
         emittedAt: nowISO(),
         actorId: getCurrentUser()?.id || null,
         payload
-      }
+      })
     });
+    if (!response.ok) throw new Error(`Event failed: ${response.status}`);
+    return await response.json();
   } catch (error) {
     console.warn("Platform event ignored:", error);
     return null;
@@ -3508,47 +3511,51 @@ function renderAuditLog(limit = 8) {
 
 // ─── Fonctions d'approbation admin ────────────────────────────────────────
 
-function approveUser(userId) {
+async function approveUser(userId) {
   const user = state.users.find((u) => u.id === userId);
   if (!user) return;
   user.approvalStatus = "approved";
   addNotification({ userId, title: "Compte activé ✅", message: "Votre compte ADSL-2EF a été validé. Vous pouvez maintenant vous connecter.", level: "success" });
   persistState(state);
-  syncApiSnapshot().then(() => render()).catch(() => render());
+  await publishPlatformEvent("user.updated", { user: { ...user } });
   saveState();
+  render();
 }
 
-function rejectUser(userId) {
+async function rejectUser(userId) {
   const user = state.users.find((u) => u.id === userId);
   if (!user) return;
   user.approvalStatus = "rejected";
   addNotification({ userId, title: "Accès refusé", message: "Votre demande d'accès à ADSL-2EF a été refusée. Contactez l'administration.", level: "warning" });
   persistState(state);
-  syncApiSnapshot().then(() => render()).catch(() => render());
+  await publishPlatformEvent("user.updated", { user: { ...user } });
   saveState();
+  render();
 }
 
-function approveCourse(courseId) {
+async function approveCourse(courseId) {
   const course = getCourseById(courseId);
   if (!course) return;
   course.status = "published";
   if (course.teacherId) addNotification({ userId: course.teacherId, title: "Cours publié ✅", message: `Votre cours "${course.title}" a été validé et publié sur la plateforme.`, level: "success" });
   persistState(state);
-  syncApiSnapshot().then(() => render()).catch(() => render());
+  await publishPlatformEvent("course.updated", { course: { ...course } });
   saveState();
+  render();
 }
 
-function rejectCourse(courseId) {
+async function rejectCourse(courseId) {
   const course = getCourseById(courseId);
   if (!course) return;
   course.status = "draft";
   if (course.teacherId) addNotification({ userId: course.teacherId, title: "Cours refusé", message: `Votre cours "${course.title}" n'a pas été validé. Contactez l'administration pour plus de détails.`, level: "warning" });
   persistState(state);
-  syncApiSnapshot().then(() => render()).catch(() => render());
+  await publishPlatformEvent("course.updated", { course: { ...course } });
   saveState();
+  render();
 }
 
-function approveEnrollment(enrollmentId) {
+async function approveEnrollment(enrollmentId) {
   if (!state.pendingEnrollments) return;
   const enrollment = state.pendingEnrollments.find((e) => e.id === enrollmentId);
   if (!enrollment) return;
@@ -3558,11 +3565,13 @@ function approveEnrollment(enrollmentId) {
   }
   state.pendingEnrollments = state.pendingEnrollments.filter((e) => e.id !== enrollmentId);
   addNotification({ userId: enrollment.userId, title: "Inscription validée ✅", message: `Votre inscription au cours "${course?.title || ""}" a été approuvée.`, level: "success" });
+  persistState(state);
+  await publishPlatformEvent("course.updated", { course: { ...course } });
   saveState();
   render();
 }
 
-function rejectEnrollment(enrollmentId) {
+async function rejectEnrollment(enrollmentId) {
   if (!state.pendingEnrollments) return;
   const enrollment = state.pendingEnrollments.find((e) => e.id === enrollmentId);
   if (!enrollment) return;
@@ -6838,4 +6847,3 @@ window.removeLesson = removeLesson;
 window.toggleLessonCompletion = toggleLessonCompletion;
 window.setAdminFilter = setAdminFilter;
 window.removeUser = removeUser;
-
