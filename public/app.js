@@ -955,8 +955,11 @@ async function loginWithSupabase(email, password) {
     bio: profile?.bio || "",
     avatar: profile?.avatar || initials(profile?.full_name || authUser.email),
     createdAt: profile?.created_at || authUser.created_at,
+    approvalStatus: profile?.approval_status || "pending",
     accessToken: data.session?.access_token
   });
+  if (user.approvalStatus === "pending") throw new Error("pending_approval");
+  if (user.approvalStatus === "rejected") throw new Error("rejected");
   return applyApiSession(user, { accessToken: data.session?.access_token }, "supabase");
 }
 
@@ -982,6 +985,9 @@ async function registerWithSupabase({ name, email, password, role }) {
       role
     });
   }
+  if (data.session?.access_token) {
+    await client.auth.signOut().catch(() => {});
+  }
   if (!data.session?.access_token) {
     return {
       pendingConfirmation: true,
@@ -989,17 +995,13 @@ async function registerWithSupabase({ name, email, password, role }) {
       name
     };
   }
-  const localUser = {
+  return {
     id: authUser?.id || crypto.randomUUID(),
     email,
     name,
     role,
-    bio: "Compte Supabase en cours d'activation.",
-    avatar: initials(name),
-    createdAt: authUser?.created_at || nowISO(),
-    accessToken: data.session?.access_token || ""
+    pending: true
   };
-  return applyApiSession(normalizeRemoteUser(localUser), { accessToken: data.session?.access_token || "" }, "supabase");
 }
 
 async function restoreSessionWithSupabase() {
@@ -1041,7 +1043,8 @@ async function ensureSupabaseProfileRecord(authUser, profileInput = {}) {
     email: String(profileInput.email || authUser.email).trim().toLowerCase(),
     role: isRoleAllowedForPublicRegistration(profileInput.role) ? profileInput.role : "student",
     bio: profileInput.bio || "",
-    avatar: profileInput.avatar || initials(profileInput.full_name || authUser.user_metadata?.full_name || authUser.email)
+    avatar: profileInput.avatar || initials(profileInput.full_name || authUser.user_metadata?.full_name || authUser.email),
+    approval_status: profileInput.approvalStatus || "pending"
   };
   const { data, error } = await client
     .from("profiles")

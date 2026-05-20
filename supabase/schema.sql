@@ -8,9 +8,12 @@ create table if not exists public.profiles (
   role text not null check (role in ('admin', 'teacher', 'student')),
   bio text default '',
   avatar text default '',
+  approval_status text not null default 'pending' check (approval_status in ('pending', 'approved', 'rejected')),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.profiles add column if not exists approval_status text not null default 'pending';
 
 create table if not exists public.courses (
   id uuid primary key default gen_random_uuid(),

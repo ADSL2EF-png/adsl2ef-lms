@@ -820,7 +820,7 @@ async function handleLogin(request, response) {
     }
 
     // Récupérer le profil depuis la table profiles
-    const profileRows = await supabaseFetch(`/profiles?id=eq.${authData.user.id}&select=*`);
+    const profileRows = await supabaseFetch(`/profiles?auth_user_id=eq.${authData.user.id}&select=*`);
     const profile = profileRows?.[0];
 
     if (!profile) {
@@ -839,7 +839,7 @@ async function handleLogin(request, response) {
     resetLoginRateLimit(ip);
     const user = {
       id: authData.user.id,
-      name: profile.name || email,
+      name: profile.full_name || profile.name || email,
       email: authData.user.email,
       role: profile.role || "student",
       bio: profile.bio || "",
@@ -913,12 +913,15 @@ async function handleRegister(request, response) {
 
     // 2. Créer le profil dans profiles avec approval_status = pending
     const avatar = name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
-    await supabaseFetch("/profiles", {
+    await supabaseFetch("/profiles?on_conflict=auth_user_id", {
       method: "POST",
       prefer: "resolution=merge-duplicates,return=minimal",
       headers: { "Prefer": "resolution=merge-duplicates,return=minimal" },
       body: JSON.stringify({
-        id: userId, name, role,
+        auth_user_id: userId,
+        full_name: name,
+        email,
+        role,
         bio: "", avatar,
         approval_status: "pending",
         created_at: new Date().toISOString(),
@@ -971,7 +974,7 @@ async function handleApproveUser(request, response) {
     const newStatus = action === "approve" ? "approved" : "rejected";
 
     // 1. Mettre à jour profiles Supabase
-    await supabaseFetch(`/profiles?id=eq.${userId}`, {
+    await supabaseFetch(`/profiles?auth_user_id=eq.${userId}`, {
       method: "PATCH",
       prefer: "return=minimal",
       headers: { "Prefer": "return=minimal" },
@@ -1027,16 +1030,20 @@ async function handleAdminCreateUser(request, response) {
       return;
     }
 
-    const userId = userData.id;
+    const createdAuthUser = userData.user || userData;
+    const userId = createdAuthUser.id;
     const avatar = name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
 
     // 2. Créer/mettre à jour le profil avec approval_status = approved
-    await supabaseFetch("/profiles", {
+    await supabaseFetch("/profiles?on_conflict=auth_user_id", {
       method: "POST",
       prefer: "resolution=merge-duplicates,return=minimal",
       headers: { "Prefer": "resolution=merge-duplicates,return=minimal" },
       body: JSON.stringify({
-        id: userId, name, role,
+        auth_user_id: userId,
+        full_name: name,
+        email,
+        role,
         bio: "", avatar,
         approval_status: "approved",
         created_at: new Date().toISOString(),
@@ -1086,9 +1093,9 @@ async function handleGetProfiles(request, response) {
     const emailMap = {};
     (usersData.users || []).forEach((u) => { emailMap[u.id] = u.email; });
     const enriched = (profiles || []).map((p) => ({
-      id: p.id,
-      name: p.name,
-      email: emailMap[p.id] || "",
+      id: p.auth_user_id || p.id,
+      name: p.full_name || p.name || "",
+      email: p.email || emailMap[p.auth_user_id] || "",
       role: p.role,
       bio: p.bio || "",
       avatar: p.avatar || "",
@@ -1123,12 +1130,12 @@ async function handleCurrentSession(request, response) {
     });
     if (!userRes.ok) { json(response, 401, { error: "invalid_token" }); return; }
     const userData = await userRes.json();
-    const profileRows = await supabaseFetch(`/profiles?id=eq.${userData.id}&select=*`);
+    const profileRows = await supabaseFetch(`/profiles?auth_user_id=eq.${userData.id}&select=*`);
     const profile = profileRows?.[0];
     json(response, 200, {
       user: {
         id: userData.id,
-        name: profile?.name || userData.email,
+        name: profile?.full_name || profile?.name || userData.email,
         email: userData.email,
         role: profile?.role || "student",
         bio: profile?.bio || "",
