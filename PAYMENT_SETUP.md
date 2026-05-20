@@ -1,10 +1,10 @@
 # Paiements Mixx / Flooz
 
-Ce projet est maintenant prepare pour un flux de paiement serveur plus propre :
+Ce projet est prepare pour un flux de paiement serveur Mixx/Flooz :
 
 1. le frontend demande l'initialisation du paiement
 2. le backend cree une transaction locale
-3. le backend appelle le fournisseur Mixx ou Flooz
+3. le backend appelle le fournisseur Mixx ou Flooz avec les identifiants marchands configures
 4. le frontend redirige l'utilisateur vers le lien de paiement
 5. le backend confirme ensuite le paiement via webhook ou confirmation interne
 6. le cours n'est ouvert qu'apres statut `approved`
@@ -34,6 +34,15 @@ Pour Flooz :
 - `ADSL2EF_FLOOZ_RETURN_URL`
 - `ADSL2EF_FLOOZ_CANCEL_URL`
 
+Les routes webhook recommandees sont :
+
+- Mixx : `POST /payments/webhook/mixx`
+- Flooz : `POST /payments/webhook/flooz`
+
+Si `ADSL2EF_PAYMENT_WEBHOOK_SECRET` est configure, le fournisseur ou votre passerelle doit envoyer :
+
+- `x-webhook-secret: <votre-secret>`
+
 ## Routes backend
 
 - `POST /payments/init`
@@ -49,7 +58,7 @@ En pratique, pour une activation reelle, il faut :
 
 - obtenir vos identifiants marchands officiels
 - obtenir les URLs et formats de payload fournis par l'operateur
-- brancher ou ajuster l'adaptateur backend selon cette documentation marchande
+- renseigner les variables `ADSL2EF_MIXX_*` et `ADSL2EF_FLOOZ_*` sur Railway ou votre serveur
 - tester les webhooks sur un domaine HTTPS public
 
-Le backend de ce projet est donc maintenant `pret pour integration`, mais la mise en production reelle demande encore les acces officiels fournis par Mixx et Flooz.
+Le backend accepte deja les providers `mixx` et `flooz`, cree une transaction locale, appelle l'URL marchand configuree, stocke la reference fournisseur, puis active le cours uniquement quand le statut devient `approved`.
