@@ -340,14 +340,54 @@ function normalizePaymentStatus(status) {
   return "pending";
 }
 
+function normalizePaymentProvider(provider) {
+  const value = String(provider || "manual").trim().toLowerCase();
+  if (["mix", "mixx", "yas", "togocom"].includes(value)) return "mixx";
+  if (["flooz", "moov-flooz", "moov_flooz"].includes(value)) return "flooz";
+  if (value === "manual") return "manual";
+  return "";
+}
+
 function extractPaymentUrl(payload) {
   if (!payload || typeof payload !== "object") return "";
-  return payload.paymentUrl || payload.payment_url || payload.checkoutUrl || payload.checkout_url || payload.url || payload.link || "";
+  return payload.paymentUrl
+    || payload.payment_url
+    || payload.checkoutUrl
+    || payload.checkout_url
+    || payload.redirectUrl
+    || payload.redirect_url
+    || payload.url
+    || payload.link
+    || payload.data?.paymentUrl
+    || payload.data?.payment_url
+    || payload.data?.checkoutUrl
+    || payload.data?.checkout_url
+    || payload.data?.redirectUrl
+    || payload.data?.redirect_url
+    || payload.data?.url
+    || payload.data?.link
+    || "";
 }
 
 function extractProviderReference(payload) {
   if (!payload || typeof payload !== "object") return "";
-  return payload.providerReference || payload.provider_reference || payload.transactionId || payload.transaction_id || payload.reference || "";
+  return payload.providerReference
+    || payload.provider_reference
+    || payload.transactionId
+    || payload.transaction_id
+    || payload.transactionReference
+    || payload.transaction_reference
+    || payload.reference
+    || payload.id
+    || payload.data?.providerReference
+    || payload.data?.provider_reference
+    || payload.data?.transactionId
+    || payload.data?.transaction_id
+    || payload.data?.transactionReference
+    || payload.data?.transaction_reference
+    || payload.data?.reference
+    || payload.data?.id
+    || "";
 }
 
 async function ensureDataFiles() {
@@ -509,9 +549,11 @@ function findUserById(state, userId) {
 
 function getPaymentProviderConfig(provider, state) {
   const payments = state.config?.payments || {};
-  if (provider === "mixx") {
+  const normalizedProvider = normalizePaymentProvider(provider);
+  if (normalizedProvider === "mixx") {
     return {
       name: "Mixx by Yas",
+      provider: "mixx",
       initUrl: MIXX_INIT_URL,
       apiKey: MIXX_API_KEY,
       merchantId: MIXX_MERCHANT_ID || payments.merchantMixx || "",
@@ -520,9 +562,10 @@ function getPaymentProviderConfig(provider, state) {
       cancelUrl: MIXX_CANCEL_URL || payments.callbackUrl || ""
     };
   }
-  if (provider === "flooz") {
+  if (normalizedProvider === "flooz") {
     return {
       name: "Flooz",
+      provider: "flooz",
       initUrl: FLOOZ_INIT_URL,
       apiKey: FLOOZ_API_KEY,
       merchantId: FLOOZ_MERCHANT_ID || payments.merchantFlooz || "",
@@ -533,6 +576,7 @@ function getPaymentProviderConfig(provider, state) {
   }
   return {
     name: "Paiement",
+    provider: normalizedProvider || "manual",
     initUrl: "",
     apiKey: "",
     merchantId: "",
@@ -599,9 +643,13 @@ async function initializeProviderPayment(providerConfig, payment, user, course) 
     merchant_id: providerConfig.merchantId,
     merchantId: providerConfig.merchantId,
     reference: payment.merchantReference,
+    merchant_reference: payment.merchantReference,
     external_reference: payment.merchantReference,
+    externalReference: payment.merchantReference,
     callback_url: providerConfig.callbackUrl,
     callbackUrl: providerConfig.callbackUrl,
+    webhook_url: providerConfig.callbackUrl,
+    webhookUrl: providerConfig.callbackUrl,
     return_url: providerConfig.returnUrl,
     returnUrl: providerConfig.returnUrl,
     cancel_url: providerConfig.cancelUrl,
@@ -609,8 +657,13 @@ async function initializeProviderPayment(providerConfig, payment, user, course) 
     customer: {
       id: user.id,
       name: user.name,
-      email: user.email
+      email: user.email,
+      phone: user.phone || ""
     },
+    customer_id: user.id,
+    customer_name: user.name,
+    customer_email: user.email,
+    customer_phone: user.phone || "",
     description: course.title,
     metadata: {
       courseId: course.id,
@@ -645,6 +698,52 @@ async function initializeProviderPayment(providerConfig, payment, user, course) 
     providerReference: extractProviderReference(data),
     failureReason: data.message || ""
   };
+}
+
+function extractWebhookPaymentReference(payload) {
+  if (!payload || typeof payload !== "object") return "";
+  const data = payload.data && typeof payload.data === "object" ? payload.data : {};
+  const transaction = payload.transaction && typeof payload.transaction === "object" ? payload.transaction : {};
+  return String(
+    payload.paymentId
+      || payload.payment_id
+      || payload.merchantReference
+      || payload.merchant_reference
+      || payload.externalReference
+      || payload.external_reference
+      || payload.reference
+      || data.paymentId
+      || data.payment_id
+      || data.merchantReference
+      || data.merchant_reference
+      || data.externalReference
+      || data.external_reference
+      || data.reference
+      || transaction.paymentId
+      || transaction.payment_id
+      || transaction.merchantReference
+      || transaction.merchant_reference
+      || transaction.externalReference
+      || transaction.external_reference
+      || transaction.reference
+      || ""
+  ).trim();
+}
+
+function extractWebhookStatus(payload, fallback) {
+  if (!payload || typeof payload !== "object") return fallback;
+  const data = payload.data && typeof payload.data === "object" ? payload.data : {};
+  const transaction = payload.transaction && typeof payload.transaction === "object" ? payload.transaction : {};
+  return payload.status
+    || payload.payment_status
+    || payload.transaction_status
+    || data.status
+    || data.payment_status
+    || data.transaction_status
+    || transaction.status
+    || transaction.payment_status
+    || transaction.transaction_status
+    || fallback;
 }
 
 function replaceOrInsert(list, item) {
@@ -1046,7 +1145,11 @@ async function handlePaymentInit(request, response) {
   if (!requireBearer(request, response)) return;
   const body = await readBody(request);
   const state = await loadState();
-  const provider = String(body.provider || "manual").trim().toLowerCase();
+  const provider = normalizePaymentProvider(body.provider || "manual");
+  if (!provider) {
+    json(response, 400, { error: "unsupported_payment_provider", message: "Fournisseur de paiement non supporte." });
+    return;
+  }
   const course = state.courses.find((item) => item.id === String(body.courseId || "").trim());
   const user = findUserById(state, String(body.userId || "").trim());
   if (!course || !user) {
@@ -1130,6 +1233,11 @@ async function handlePaymentConfirm(request, response) {
 }
 
 async function handlePaymentWebhook(request, response, provider) {
+  const normalizedProvider = normalizePaymentProvider(provider);
+  if (!normalizedProvider || normalizedProvider === "manual") {
+    json(response, 400, { error: "unsupported_payment_provider", message: "Webhook fournisseur non supporte." });
+    return;
+  }
   if (PAYMENT_WEBHOOK_SECRET) {
     const signature = request.headers["x-webhook-secret"] || "";
     if (signature !== PAYMENT_WEBHOOK_SECRET) {
@@ -1139,17 +1247,17 @@ async function handlePaymentWebhook(request, response, provider) {
   }
   const body = await readBody(request);
   const state = await loadState();
-  const candidateId = String(body.paymentId || body.payment_id || body.reference || body.merchantReference || "").trim();
+  const candidateId = extractWebhookPaymentReference(body);
   const payment = state.paymentRecords.find((item) => item.id === candidateId || item.merchantReference === candidateId);
   if (!payment) {
     json(response, 404, { error: "payment_not_found", message: "Transaction introuvable pour ce webhook." });
     return;
   }
-  payment.status = normalizePaymentStatus(body.status || body.payment_status || payment.status);
-  payment.provider = provider || payment.provider;
-  payment.providerReference = String(body.providerReference || body.provider_reference || body.transaction_id || payment.providerReference || "").trim();
-  payment.paymentUrl = String(body.paymentUrl || body.payment_url || payment.paymentUrl || "").trim();
-  payment.failureReason = String(body.failureReason || body.message || payment.failureReason || "").trim();
+  payment.status = normalizePaymentStatus(extractWebhookStatus(body, payment.status));
+  payment.provider = normalizedProvider;
+  payment.providerReference = String(extractProviderReference(body) || payment.providerReference || "").trim();
+  payment.paymentUrl = String(extractPaymentUrl(body) || payment.paymentUrl || "").trim();
+  payment.failureReason = String(body.failureReason || body.failure_reason || body.message || body.data?.message || payment.failureReason || "").trim();
   payment.updatedAt = new Date().toISOString();
   if (payment.status === "approved") {
     payment.confirmedAt = new Date().toISOString();
