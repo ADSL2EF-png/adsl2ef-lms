@@ -1033,6 +1033,44 @@ async function handleApproveUser(request, response) {
   }
 }
 
+async function findSupabaseAuthUserByEmail(email) {
+  const usersRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users?per_page=1000`, {
+    headers: {
+      "apikey": SUPABASE_SERVICE_KEY,
+      "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`
+    }
+  });
+  const usersData = await usersRes.json();
+  if (!usersRes.ok) {
+    throw new Error(usersData.msg || usersData.message || "Lecture des utilisateurs Supabase impossible.");
+  }
+  return (usersData.users || []).find((user) => String(user.email || "").toLowerCase() === email) || null;
+}
+
+async function updateSupabaseAuthUser(userId, { email, password, name, role }) {
+  const payload = {
+    email,
+    email_confirm: true,
+    user_metadata: { name, role }
+  };
+  if (password) payload.password = password;
+
+  const updateRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${userId}`, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/json",
+      "apikey": SUPABASE_SERVICE_KEY,
+      "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`
+    },
+    body: JSON.stringify(payload)
+  });
+  const updateData = await updateRes.json();
+  if (!updateRes.ok) {
+    throw new Error(updateData.msg || updateData.message || "Mise a jour utilisateur Supabase impossible.");
+  }
+  return updateData.user || updateData;
+}
+
 async function handleAdminCreateUser(request, response) {
   if (!requireBearer(request, response)) return;
   const body = await readBody(request);
@@ -1062,12 +1100,23 @@ async function handleAdminCreateUser(request, response) {
       })
     });
     const userData = await createRes.json();
+    let createdAuthUser = null;
     if (!createRes.ok) {
-      json(response, 400, { error: "create_failed", message: userData.msg || userData.message || "Création impossible." });
-      return;
+      const message = String(userData.msg || userData.message || "").toLowerCase();
+      if (!message.includes("already")) {
+        json(response, 400, { error: "create_failed", message: userData.msg || userData.message || "Creation impossible." });
+        return;
+      }
+      const existingAuthUser = await findSupabaseAuthUserByEmail(email);
+      if (!existingAuthUser) {
+        json(response, 409, { error: "user_exists_but_not_found", message: "Ce compte existe deja, mais il est introuvable dans Supabase Auth." });
+        return;
+      }
+      createdAuthUser = await updateSupabaseAuthUser(existingAuthUser.id, { email, password, name, role });
+    } else {
+      createdAuthUser = userData.user || userData;
     }
 
-    const createdAuthUser = userData.user || userData;
     const userId = createdAuthUser.id;
     const avatar = name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
 
