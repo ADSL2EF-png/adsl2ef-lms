@@ -41,10 +41,12 @@ const starterData = {
     payments: {
       mixxEnabled: true,
       floozEnabled: true,
+      paygateEnabled: true,
       mode: "manual",
       callbackUrl: "",
       merchantMixx: "",
-      merchantFlooz: ""
+      merchantFlooz: "",
+      merchantPaygate: ""
     },
     persistence: {
       mode: "api",
@@ -802,6 +804,7 @@ function paymentProviderLabel(provider) {
   const value = String(provider || "").trim().toLowerCase();
   if (value === "mixx") return "Mixx by Yas";
   if (value === "flooz") return "Flooz";
+  if (value === "paygate") return "PayGate Global";
   return "Paiement";
 }
 
@@ -4614,10 +4617,12 @@ function openPlatformSettings() {
       <div class="field full"><label for="site-whatsapp">Lien WhatsApp</label><input id="site-whatsapp" name="siteWhatsapp" value="${escapeHtml(site.whatsappUrl)}"></div>
       <div class="field"><label for="mixx-enabled">Mixx by Yas</label><select id="mixx-enabled" name="mixxEnabled"><option value="true" ${payments.mixxEnabled ? "selected" : ""}>Activé</option><option value="false" ${!payments.mixxEnabled ? "selected" : ""}>Désactivé</option></select></div>
       <div class="field"><label for="flooz-enabled">Flooz</label><select id="flooz-enabled" name="floozEnabled"><option value="true" ${payments.floozEnabled ? "selected" : ""}>Activé</option><option value="false" ${!payments.floozEnabled ? "selected" : ""}>Désactivé</option></select></div>
+      <div class="field"><label for="paygate-enabled">PayGate Global</label><select id="paygate-enabled" name="paygateEnabled"><option value="true" ${payments.paygateEnabled ? "selected" : ""}>Activé</option><option value="false" ${!payments.paygateEnabled ? "selected" : ""}>Désactivé</option></select></div>
       <div class="field"><label for="payment-mode">Mode de paiement</label><select id="payment-mode" name="paymentMode"><option value="manual" ${payments.mode === "manual" ? "selected" : ""}>Validation manuelle</option><option value="callback" ${payments.mode === "callback" ? "selected" : ""}>Callback automatique</option></select></div>
       <div class="field"><label for="payment-callback">URL callback</label><input id="payment-callback" name="paymentCallback" value="${escapeHtml(payments.callbackUrl)}" placeholder="https://votre-api/paiement"></div>
       <div class="field"><label for="merchant-mixx">Compte Mixx</label><input id="merchant-mixx" name="merchantMixx" value="${escapeHtml(payments.merchantMixx)}"></div>
       <div class="field"><label for="merchant-flooz">Compte Flooz</label><input id="merchant-flooz" name="merchantFlooz" value="${escapeHtml(payments.merchantFlooz)}"></div>
+      <div class="field"><label for="merchant-paygate">Compte PayGate</label><input id="merchant-paygate" name="merchantPaygate" value="${escapeHtml(payments.merchantPaygate || "")}"></div>
       <div class="field"><label for="persistence-mode">Mode de persistance</label><select id="persistence-mode" name="persistenceMode"><option value="local" ${persistence.mode === "local" ? "selected" : ""}>Local sécurisé temporaire</option><option value="jsonbin" ${persistence.mode === "jsonbin" ? "selected" : ""}>JSONBin pour contenus</option><option value="api" ${persistence.mode === "api" ? "selected" : ""}>API backend</option><option value="supabase" ${persistence.mode === "supabase" ? "selected" : ""}>Supabase</option></select></div>
       <div class="field"><label for="persistence-api-base">Base URL API</label><input id="persistence-api-base" name="persistenceApiBaseUrl" value="${escapeHtml(persistence.apiBaseUrl || "")}" placeholder="https://votre-api.com"></div>
       <div class="field"><label for="persistence-health-path">Route test backend</label><input id="persistence-health-path" name="persistenceHealthPath" value="${escapeHtml(persistence.healthPath || "/health")}" placeholder="/health"></div>
@@ -5274,6 +5279,7 @@ function purchaseCourse(courseId) {
   const paymentChoices = [];
   if (payments.mixxEnabled) paymentChoices.push(`<button class="btn-primary" onclick="processPayment('${courseId}','mixx')">Payer avec Mixx by Yas</button>`);
   if (payments.floozEnabled) paymentChoices.push(`<button class="btn-primary" onclick="processPayment('${courseId}','flooz')">Payer avec Flooz</button>`);
+  if (payments.paygateEnabled) paymentChoices.push(`<button class="btn-primary" onclick="processPayment('${courseId}','paygate')">Payer avec PayGate</button>`);
   openModal(`
     <h2>Paiement du parcours</h2>
     <p class="section-subtitle">Choisissez votre mode de paiement pour le cours <strong>${escapeHtml(course?.title || "")}</strong>.</p>
@@ -6706,10 +6712,12 @@ function handleSettingsSave(event) {
   state.config.site.whatsappUrl = String(formData.get("siteWhatsapp")).trim();
   state.config.payments.mixxEnabled = String(formData.get("mixxEnabled")) === "true";
   state.config.payments.floozEnabled = String(formData.get("floozEnabled")) === "true";
+  state.config.payments.paygateEnabled = String(formData.get("paygateEnabled")) === "true";
   state.config.payments.mode = String(formData.get("paymentMode")).trim();
   state.config.payments.callbackUrl = String(formData.get("paymentCallback")).trim();
   state.config.payments.merchantMixx = String(formData.get("merchantMixx")).trim();
   state.config.payments.merchantFlooz = String(formData.get("merchantFlooz")).trim();
+  state.config.payments.merchantPaygate = String(formData.get("merchantPaygate")).trim();
   state.config.persistence.mode = String(formData.get("persistenceMode")).trim();
   state.config.persistence.apiBaseUrl = String(formData.get("persistenceApiBaseUrl")).trim();
   state.config.persistence.healthPath = String(formData.get("persistenceHealthPath")).trim() || "/health";
