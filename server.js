@@ -566,6 +566,82 @@ function findUserById(state, userId) {
   return state.users.find((user) => user.id === userId) || null;
 }
 
+function isMissingSupabaseColumnError(error, columnName) {
+  const message = String(error?.message || "");
+  return message.includes("PGRST204") && message.includes(`'${columnName}'`);
+}
+
+async function loadProfileByAuthUserId(authUserId) {
+  try {
+    const profileRows = await supabaseFetch(`/profiles?auth_user_id=eq.${authUserId}&select=*`);
+    return profileRows?.[0] || null;
+  } catch (error) {
+    if (!isMissingSupabaseColumnError(error, "auth_user_id")) throw error;
+    const fallbackRows = await supabaseFetch(`/profiles?id=eq.${authUserId}&select=*`);
+    return fallbackRows?.[0] || null;
+  }
+}
+
+async function upsertSupabaseProfile({ authUserId, email, name, role, avatar, approvalStatus }) {
+  const createdAt = new Date().toISOString();
+  try {
+    await supabaseFetch("/profiles?on_conflict=auth_user_id", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=minimal",
+      headers: { "Prefer": "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({
+        auth_user_id: authUserId,
+        full_name: name,
+        email,
+        role,
+        bio: "",
+        avatar,
+        approval_status: approvalStatus,
+        created_at: createdAt,
+        updated_at: createdAt
+      })
+    });
+  } catch (error) {
+    if (!isMissingSupabaseColumnError(error, "auth_user_id") && !isMissingSupabaseColumnError(error, "full_name")) throw error;
+    await supabaseFetch("/profiles", {
+      method: "POST",
+      prefer: "resolution=merge-duplicates,return=minimal",
+      headers: { "Prefer": "resolution=merge-duplicates,return=minimal" },
+      body: JSON.stringify({
+        id: authUserId,
+        name,
+        email,
+        role,
+        bio: "",
+        avatar,
+        approval_status: approvalStatus,
+        created_at: createdAt,
+        updated_at: createdAt
+      })
+    });
+  }
+}
+
+async function updateSupabaseProfileApproval(authUserId, approvalStatus) {
+  const payload = { approval_status: approvalStatus, updated_at: new Date().toISOString() };
+  try {
+    await supabaseFetch(`/profiles?auth_user_id=eq.${authUserId}`, {
+      method: "PATCH",
+      prefer: "return=minimal",
+      headers: { "Prefer": "return=minimal" },
+      body: JSON.stringify(payload)
+    });
+  } catch (error) {
+    if (!isMissingSupabaseColumnError(error, "auth_user_id")) throw error;
+    await supabaseFetch(`/profiles?id=eq.${authUserId}`, {
+      method: "PATCH",
+      prefer: "return=minimal",
+      headers: { "Prefer": "return=minimal" },
+      body: JSON.stringify(payload)
+    });
+  }
+}
+
 function getPaymentProviderConfig(provider, state) {
   const payments = state.config?.payments || {};
   const normalizedProvider = normalizePaymentProvider(provider);
@@ -857,8 +933,7 @@ async function handleLogin(request, response) {
     }
 
     // Récupérer le profil depuis la table profiles
-    const profileRows = await supabaseFetch(`/profiles?auth_user_id=eq.${authData.user.id}&select=*`);
-    const profile = profileRows?.[0];
+    const profile = await loadProfileByAuthUserId(authData.user.id);
 
     if (!profile) {
       json(response, 404, { error: "profile_not_found", message: "Profil introuvable." });
@@ -950,21 +1025,7 @@ async function handleRegister(request, response) {
 
     // 2. Créer le profil dans profiles avec approval_status = pending
     const avatar = name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
-    await supabaseFetch("/profiles?on_conflict=auth_user_id", {
-      method: "POST",
-      prefer: "resolution=merge-duplicates,return=minimal",
-      headers: { "Prefer": "resolution=merge-duplicates,return=minimal" },
-      body: JSON.stringify({
-        auth_user_id: userId,
-        full_name: name,
-        email,
-        role,
-        bio: "", avatar,
-        approval_status: "pending",
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-    });
+    await upsertSupabaseProfile({ authUserId: userId, email, name, role, avatar, approvalStatus: "pending" });
 
     // 3. Ajouter une notification pour les admins dans lms_state
     const state = await loadState();
@@ -1011,12 +1072,7 @@ async function handleApproveUser(request, response) {
     const newStatus = action === "approve" ? "approved" : "rejected";
 
     // 1. Mettre à jour profiles Supabase
-    await supabaseFetch(`/profiles?auth_user_id=eq.${userId}`, {
-      method: "PATCH",
-      prefer: "return=minimal",
-      headers: { "Prefer": "return=minimal" },
-      body: JSON.stringify({ approval_status: newStatus, updated_at: new Date().toISOString() })
-    });
+    await updateSupabaseProfileApproval(userId, newStatus);
 
     // 2. Mettre à jour lms_state
     const state = await loadState();
@@ -1121,21 +1177,7 @@ async function handleAdminCreateUser(request, response) {
     const avatar = name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
 
     // 2. Créer/mettre à jour le profil avec approval_status = approved
-    await supabaseFetch("/profiles?on_conflict=auth_user_id", {
-      method: "POST",
-      prefer: "resolution=merge-duplicates,return=minimal",
-      headers: { "Prefer": "resolution=merge-duplicates,return=minimal" },
-      body: JSON.stringify({
-        auth_user_id: userId,
-        full_name: name,
-        email,
-        role,
-        bio: "", avatar,
-        approval_status: "approved",
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      })
-    });
+    await upsertSupabaseProfile({ authUserId: userId, email, name, role, avatar, approvalStatus: "approved" });
 
     // 3. Ajouter dans lms_state pour que le dashboard admin le voit immédiatement
     const state = await loadState();
@@ -1216,8 +1258,7 @@ async function handleCurrentSession(request, response) {
     });
     if (!userRes.ok) { json(response, 401, { error: "invalid_token" }); return; }
     const userData = await userRes.json();
-    const profileRows = await supabaseFetch(`/profiles?auth_user_id=eq.${userData.id}&select=*`);
-    const profile = profileRows?.[0];
+    const profile = await loadProfileByAuthUserId(userData.id);
     json(response, 200, {
       user: {
         id: userData.id,
