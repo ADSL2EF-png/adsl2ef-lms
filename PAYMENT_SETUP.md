@@ -1,10 +1,10 @@
-# Paiements Mixx / Flooz
+# Paiements Mixx / Flooz / PayGate
 
-Ce projet est prepare pour un flux de paiement serveur Mixx/Flooz :
+Ce projet est prepare pour un flux de paiement serveur Mixx/Flooz/PayGate :
 
 1. le frontend demande l'initialisation du paiement
 2. le backend cree une transaction locale
-3. le backend appelle le fournisseur Mixx ou Flooz avec les identifiants marchands configures
+3. le backend appelle le fournisseur Mixx, Flooz ou PayGate avec les identifiants marchands configures
 4. le frontend redirige l'utilisateur vers le lien de paiement
 5. le backend confirme ensuite le paiement via webhook ou confirmation interne
 6. le cours n'est ouvert qu'apres statut `approved`
@@ -34,10 +34,24 @@ Pour Flooz :
 - `ADSL2EF_FLOOZ_RETURN_URL`
 - `ADSL2EF_FLOOZ_CANCEL_URL`
 
+Pour PayGate Global :
+
+- `ADSL2EF_PAYGATE_INIT_URL`
+- `ADSL2EF_PAYGATE_API_KEY`
+- `ADSL2EF_PAYGATE_MERCHANT_ID`
+- `ADSL2EF_PAYGATE_CALLBACK_URL`
+- `ADSL2EF_PAYGATE_RETURN_URL`
+- `ADSL2EF_PAYGATE_CANCEL_URL`
+
 Les routes webhook recommandees sont :
 
 - Mixx : `POST /payments/webhook/mixx`
 - Flooz : `POST /payments/webhook/flooz`
+- PayGate : `POST /payments/webhook/paygate`
+
+Pour le champ `Adresse de retour (Callback URL)` dans le profil PayGate, utilisez :
+
+`https://adsl2ef-lms-production.up.railway.app/payments/webhook/paygate`
 
 Si `ADSL2EF_PAYMENT_WEBHOOK_SECRET` est configure, le fournisseur ou votre passerelle doit envoyer :
 
@@ -52,13 +66,13 @@ Si `ADSL2EF_PAYMENT_WEBHOOK_SECRET` est configure, le fournisseur ou votre passe
 
 ## Important
 
-Les API publiques Mixx/Flooz ne sont generalement pas documentees de maniere ouverte pour tous les marchands.
+Les API publiques Mixx/Flooz/PayGate ne sont generalement pas documentees de maniere ouverte pour tous les marchands.
 
 En pratique, pour une activation reelle, il faut :
 
 - obtenir vos identifiants marchands officiels
 - obtenir les URLs et formats de payload fournis par l'operateur
-- renseigner les variables `ADSL2EF_MIXX_*` et `ADSL2EF_FLOOZ_*` sur Railway ou votre serveur
+- renseigner les variables `ADSL2EF_MIXX_*`, `ADSL2EF_FLOOZ_*` et `ADSL2EF_PAYGATE_*` sur Railway ou votre serveur
 - tester les webhooks sur un domaine HTTPS public
 
-Le backend accepte deja les providers `mixx` et `flooz`, cree une transaction locale, appelle l'URL marchand configuree, stocke la reference fournisseur, puis active le cours uniquement quand le statut devient `approved`.
+Le backend accepte deja les providers `mixx`, `flooz` et `paygate`, cree une transaction locale, appelle l'URL marchand configuree, stocke la reference fournisseur, puis active le cours uniquement quand le statut devient `approved`.

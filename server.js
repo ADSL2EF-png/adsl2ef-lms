@@ -72,6 +72,12 @@ const FLOOZ_MERCHANT_ID = process.env.ADSL2EF_FLOOZ_MERCHANT_ID || "";
 const FLOOZ_CALLBACK_URL = process.env.ADSL2EF_FLOOZ_CALLBACK_URL || "";
 const FLOOZ_RETURN_URL = process.env.ADSL2EF_FLOOZ_RETURN_URL || "";
 const FLOOZ_CANCEL_URL = process.env.ADSL2EF_FLOOZ_CANCEL_URL || "";
+const PAYGATE_INIT_URL = process.env.ADSL2EF_PAYGATE_INIT_URL || "https://paygateglobal.com/api/v1/pay";
+const PAYGATE_API_KEY = process.env.ADSL2EF_PAYGATE_API_KEY || "";
+const PAYGATE_MERCHANT_ID = process.env.ADSL2EF_PAYGATE_MERCHANT_ID || "ADSL-2EF";
+const PAYGATE_CALLBACK_URL = process.env.ADSL2EF_PAYGATE_CALLBACK_URL || "";
+const PAYGATE_RETURN_URL = process.env.ADSL2EF_PAYGATE_RETURN_URL || "";
+const PAYGATE_CANCEL_URL = process.env.ADSL2EF_PAYGATE_CANCEL_URL || "";
 
 // ─── Supabase (base de données persistante) ───────────────────────────────
 const SUPABASE_URL = process.env.ADSL2EF_SUPABASE_URL || "";
@@ -344,6 +350,7 @@ function normalizePaymentProvider(provider) {
   const value = String(provider || "manual").trim().toLowerCase();
   if (["mix", "mixx", "yas", "togocom"].includes(value)) return "mixx";
   if (["flooz", "moov-flooz", "moov_flooz"].includes(value)) return "flooz";
+  if (["paygate", "paygate-global", "paygate_global"].includes(value)) return "paygate";
   if (value === "manual") return "manual";
   return "";
 }
@@ -354,6 +361,8 @@ function extractPaymentUrl(payload) {
     || payload.payment_url
     || payload.checkoutUrl
     || payload.checkout_url
+    || payload.payUrl
+    || payload.pay_url
     || payload.redirectUrl
     || payload.redirect_url
     || payload.url
@@ -362,6 +371,8 @@ function extractPaymentUrl(payload) {
     || payload.data?.payment_url
     || payload.data?.checkoutUrl
     || payload.data?.checkout_url
+    || payload.data?.payUrl
+    || payload.data?.pay_url
     || payload.data?.redirectUrl
     || payload.data?.redirect_url
     || payload.data?.url
@@ -377,6 +388,10 @@ function extractProviderReference(payload) {
     || payload.transaction_id
     || payload.transactionReference
     || payload.transaction_reference
+    || payload.txReference
+    || payload.tx_reference
+    || payload.paymentReference
+    || payload.payment_reference
     || payload.reference
     || payload.id
     || payload.data?.providerReference
@@ -385,6 +400,10 @@ function extractProviderReference(payload) {
     || payload.data?.transaction_id
     || payload.data?.transactionReference
     || payload.data?.transaction_reference
+    || payload.data?.txReference
+    || payload.data?.tx_reference
+    || payload.data?.paymentReference
+    || payload.data?.payment_reference
     || payload.data?.reference
     || payload.data?.id
     || "";
@@ -574,6 +593,18 @@ function getPaymentProviderConfig(provider, state) {
       cancelUrl: FLOOZ_CANCEL_URL || payments.callbackUrl || ""
     };
   }
+  if (normalizedProvider === "paygate") {
+    return {
+      name: "PayGate Global",
+      provider: "paygate",
+      initUrl: PAYGATE_INIT_URL,
+      apiKey: PAYGATE_API_KEY,
+      merchantId: PAYGATE_MERCHANT_ID,
+      callbackUrl: PAYGATE_CALLBACK_URL || payments.callbackUrl || "https://adsl2ef-lms-production.up.railway.app/payments/webhook/paygate",
+      returnUrl: PAYGATE_RETURN_URL || payments.callbackUrl || "https://adsl2ef-lms-production.up.railway.app/",
+      cancelUrl: PAYGATE_CANCEL_URL || payments.callbackUrl || "https://adsl2ef-lms-production.up.railway.app/"
+    };
+  }
   return {
     name: "Paiement",
     provider: normalizedProvider || "manual",
@@ -640,8 +671,11 @@ async function initializeProviderPayment(providerConfig, payment, user, course) 
   const payload = {
     amount: payment.amount,
     currency: payment.currency,
+    auth_token: providerConfig.apiKey,
+    token: providerConfig.apiKey,
     merchant_id: providerConfig.merchantId,
     merchantId: providerConfig.merchantId,
+    identifier: payment.merchantReference,
     reference: payment.merchantReference,
     merchant_reference: payment.merchantReference,
     external_reference: payment.merchantReference,
@@ -711,6 +745,7 @@ function extractWebhookPaymentReference(payload) {
       || payload.merchant_reference
       || payload.externalReference
       || payload.external_reference
+      || payload.identifier
       || payload.reference
       || data.paymentId
       || data.payment_id
@@ -718,6 +753,7 @@ function extractWebhookPaymentReference(payload) {
       || data.merchant_reference
       || data.externalReference
       || data.external_reference
+      || data.identifier
       || data.reference
       || transaction.paymentId
       || transaction.payment_id
@@ -725,6 +761,7 @@ function extractWebhookPaymentReference(payload) {
       || transaction.merchant_reference
       || transaction.externalReference
       || transaction.external_reference
+      || transaction.identifier
       || transaction.reference
       || ""
   ).trim();
@@ -1260,7 +1297,10 @@ async function handlePaymentWebhook(request, response, provider) {
     json(response, 404, { error: "payment_not_found", message: "Transaction introuvable pour ce webhook." });
     return;
   }
-  payment.status = normalizePaymentStatus(extractWebhookStatus(body, payment.status));
+  const nextStatus = normalizedProvider === "paygate"
+    ? extractWebhookStatus(body, body.payment_reference || body.tx_reference ? "approved" : payment.status)
+    : extractWebhookStatus(body, payment.status);
+  payment.status = normalizePaymentStatus(nextStatus);
   payment.provider = normalizedProvider;
   payment.providerReference = String(extractProviderReference(body) || payment.providerReference || "").trim();
   payment.paymentUrl = String(extractPaymentUrl(body) || payment.paymentUrl || "").trim();
