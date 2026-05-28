@@ -571,6 +571,31 @@ function isMissingSupabaseColumnError(error, columnName) {
   return message.includes("PGRST204") && message.includes(`'${columnName}'`);
 }
 
+function getMissingSupabaseColumn(error) {
+  const match = String(error?.message || "").match(/Could not find the '([^']+)' column/);
+  return match?.[1] || "";
+}
+
+async function postProfileWithColumnFallback(path, payload) {
+  const nextPayload = { ...payload };
+  for (let attempt = 0; attempt < 8; attempt++) {
+    try {
+      await supabaseFetch(path, {
+        method: "POST",
+        prefer: "resolution=merge-duplicates,return=minimal",
+        headers: { "Prefer": "resolution=merge-duplicates,return=minimal" },
+        body: JSON.stringify(nextPayload)
+      });
+      return;
+    } catch (error) {
+      const missingColumn = getMissingSupabaseColumn(error);
+      if (!missingColumn || !(missingColumn in nextPayload)) throw error;
+      delete nextPayload[missingColumn];
+    }
+  }
+  throw new Error("Profil Supabase incompatible avec les colonnes disponibles.");
+}
+
 async function loadProfileByAuthUserId(authUserId) {
   try {
     const profileRows = await supabaseFetch(`/profiles?auth_user_id=eq.${authUserId}&select=*`);
@@ -585,39 +610,29 @@ async function loadProfileByAuthUserId(authUserId) {
 async function upsertSupabaseProfile({ authUserId, email, name, role, avatar, approvalStatus }) {
   const createdAt = new Date().toISOString();
   try {
-    await supabaseFetch("/profiles?on_conflict=auth_user_id", {
-      method: "POST",
-      prefer: "resolution=merge-duplicates,return=minimal",
-      headers: { "Prefer": "resolution=merge-duplicates,return=minimal" },
-      body: JSON.stringify({
-        auth_user_id: authUserId,
-        full_name: name,
-        email,
-        role,
-        bio: "",
-        avatar,
-        approval_status: approvalStatus,
-        created_at: createdAt,
-        updated_at: createdAt
-      })
+    await postProfileWithColumnFallback("/profiles?on_conflict=auth_user_id", {
+      auth_user_id: authUserId,
+      full_name: name,
+      email,
+      role,
+      bio: "",
+      avatar,
+      approval_status: approvalStatus,
+      created_at: createdAt,
+      updated_at: createdAt
     });
   } catch (error) {
     if (!isMissingSupabaseColumnError(error, "auth_user_id") && !isMissingSupabaseColumnError(error, "full_name")) throw error;
-    await supabaseFetch("/profiles", {
-      method: "POST",
-      prefer: "resolution=merge-duplicates,return=minimal",
-      headers: { "Prefer": "resolution=merge-duplicates,return=minimal" },
-      body: JSON.stringify({
-        id: authUserId,
-        name,
-        email,
-        role,
-        bio: "",
-        avatar,
-        approval_status: approvalStatus,
-        created_at: createdAt,
-        updated_at: createdAt
-      })
+    await postProfileWithColumnFallback("/profiles", {
+      id: authUserId,
+      name,
+      email,
+      role,
+      bio: "",
+      avatar,
+      approval_status: approvalStatus,
+      created_at: createdAt,
+      updated_at: createdAt
     });
   }
 }
