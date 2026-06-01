@@ -1053,23 +1053,41 @@ async function handleRegister(request, response) {
 
   try {
     // 1. Créer dans Supabase Auth
-    const signupRes = await fetch(`${SUPABASE_URL}/auth/v1/signup`, {
+    const createRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users`, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "apikey": SUPABASE_SERVICE_KEY },
-      body: JSON.stringify({ email, password, data: { name, role } })
+      headers: {
+        "Content-Type": "application/json",
+        "apikey": SUPABASE_SERVICE_KEY,
+        "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`
+      },
+      body: JSON.stringify({
+        email,
+        password,
+        email_confirm: true,
+        user_metadata: { name, role }
+      })
     });
-    const signupData = await signupRes.json();
+    const userData = await createRes.json();
 
-    if (!signupRes.ok) {
-      if (signupData.msg?.toLowerCase().includes("already") || signupData.code === "email_exists") {
+    let createdAuthUser = null;
+    if (!createRes.ok) {
+      const message = String(userData.msg || userData.message || "").toLowerCase();
+      if (!message.includes("already")) {
+        console.warn("Supabase public register failed:", userData);
         await registerWithLocalState();
         return;
       }
-      await registerWithLocalState();
-      return;
+      const existingAuthUser = await findSupabaseAuthUserByEmail(email);
+      if (!existingAuthUser) {
+        await registerWithLocalState();
+        return;
+      }
+      createdAuthUser = await updateSupabaseAuthUser(existingAuthUser.id, { email, password, name, role });
+    } else {
+      createdAuthUser = userData.user || userData;
     }
 
-    const userId = signupData.user?.id;
+    const userId = createdAuthUser?.id;
     if (!userId) {
       json(response, 400, { error: "signup_failed", message: "Erreur lors de la création du compte." });
       return;
