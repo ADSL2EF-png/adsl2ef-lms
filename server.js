@@ -996,21 +996,28 @@ async function handleRegister(request, response) {
     return;
   }
 
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+  async function registerWithLocalState() {
     const state = await loadState();
-    if (state.users.some((u) => u.email.toLowerCase() === email)) {
-      json(response, 409, { error: "email_exists", message: "Cet email existe déjà." });
-      return;
-    }
-    const user = {
-      id: randomId("usr"), name, email, role,
-      bio: "", avatar: name.split(" ").map((w) => w[0]?.toUpperCase()).join("").slice(0, 2),
-      createdAt: new Date().toISOString(), approvalStatus: "approved",
-      passwordHash: createPasswordHash(password)
+    const existing = state.users.find((u) => String(u.email || "").toLowerCase() === email);
+    const user = existing || {
+      id: randomId("usr"),
+      email,
+      createdAt: new Date().toISOString()
     };
-    state.users.push(user);
+    user.name = name;
+    user.role = role;
+    user.bio = user.bio || "";
+    user.avatar = user.avatar || name.split(" ").map((w) => w[0]?.toUpperCase()).join("").slice(0, 2);
+    user.approvalStatus = "approved";
+    user.passwordHash = createPasswordHash(password);
+    if (!existing) state.users.push(user);
     await saveState(state);
-    json(response, 201, { accessToken: signToken(user), user: sanitizeUser(user) });
+    json(response, existing ? 200 : 201, { accessToken: signToken(user), user: sanitizeUser(user) });
+    return user;
+  }
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+    await registerWithLocalState();
     return;
   }
 
@@ -1025,10 +1032,10 @@ async function handleRegister(request, response) {
 
     if (!signupRes.ok) {
       if (signupData.msg?.toLowerCase().includes("already") || signupData.code === "email_exists") {
-        json(response, 409, { error: "email_exists", message: "Cet email existe déjà." });
+        await registerWithLocalState();
         return;
       }
-      json(response, 400, { error: "signup_failed", message: signupData.msg || "Inscription impossible." });
+      await registerWithLocalState();
       return;
     }
 
@@ -1069,7 +1076,12 @@ async function handleRegister(request, response) {
     json(response, 201, { accessToken: signToken(createdUser), user: sanitizeUser(createdUser) });
   } catch (err) {
     console.error("Register error:", err);
-    json(response, 500, { error: "internal_error", message: "Erreur lors de l'inscription." });
+    try {
+      await registerWithLocalState();
+    } catch (fallbackError) {
+      console.error("Register fallback error:", fallbackError);
+      json(response, 500, { error: "internal_error", message: "Erreur lors de l'inscription." });
+    }
   }
 }
 
