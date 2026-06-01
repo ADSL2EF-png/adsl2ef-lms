@@ -5569,11 +5569,7 @@ async function handleLogin(event) {
       alert("Identifiants invalides.");
       return;
     }
-    // Bloquer les comptes en attente de validation
-    if (user.approvalStatus === "pending") {
-      alert("Votre compte est en attente de validation par l'administrateur. Vous serez notifié dès que votre accès sera activé.");
-      return;
-    }
+    // Les comptes inscrits en ligne sont approuvés automatiquement.
     // Bloquer les comptes rejetés
     if (user.approvalStatus === "rejected") {
       alert("Votre demande d'accès a été refusée. Contactez l'administration ADSL-2EF pour plus d'informations.");
@@ -5606,14 +5602,11 @@ async function handleRegister(event) {
       password: await secureLocalPassword(password),
       role, bio: "Nouveau compte plateforme.", avatar: initials(name),
       createdAt: nowISO(),
-      approvalStatus: "pending" // ← nouveau compte en attente de validation admin
+      approvalStatus: "approved"
     };
     state.users.push(user);
-    // Notifier tous les admins
-    state.users.filter((u) => u.role === "admin").forEach((admin) => {
-      addNotification({ userId: admin.id, title: "Nouvelle inscription en attente", message: `${name} (${role}) demande l'accès à la plateforme.`, level: "warning" });
-    });
-    // NE PAS connecter l'utilisateur — il doit attendre la validation
+    state.currentUserId = user.id;
+    state.session = { accessToken: "", authProvider: "local", lastAuthAt: nowISO() };
     return user;
   };
 
@@ -5639,16 +5632,6 @@ async function handleRegister(event) {
     if (!user && !shouldUseSupabasePersistence() && shouldUseApiPersistence()) {
       try {
         user = await registerWithApi({ name, email, password, role });
-        // Inscription API réussie — afficher message d'attente
-        closeModal();
-        openModal(`
-          <div style="text-align:center;padding:24px">
-            <div style="font-size:48px;margin-bottom:16px">⏳</div>
-            <h2>Inscription reçue !</h2>
-            <p class="section-subtitle" style="margin-top:12px">Votre demande d'accès a été transmise à l'administrateur ADSL-2EF.<br>Vous recevrez une confirmation dès que votre compte sera validé.</p>
-          </div>
-        `);
-        return;
       } catch (error) {
         console.warn("API register error:", error);
         if (error.message === "email_exists") {
@@ -5667,15 +5650,9 @@ async function handleRegister(event) {
       return;
     }
     closeModal();
+    state.ui.screen = "dashboard";
+    addNotification({ userId: user.id, title: "Bienvenue sur ADSL-2EF", message: "Votre compte est prêt. Explorez votre tableau de bord personnalisé.", level: "success" });
     saveState();
-    // Afficher message d'attente de validation
-    openModal(`
-      <div style="text-align:center;padding:24px">
-        <div style="font-size:48px;margin-bottom:16px">⏳</div>
-        <h2>Inscription reçue !</h2>
-        <p class="section-subtitle" style="margin-top:12px">Votre demande d'accès a été transmise à l'administrateur ADSL-2EF.<br>Vous recevrez une confirmation dès que votre compte sera validé.</p>
-      </div>
-    `);
   } catch (error) {
     console.warn("Register error:", error);
     alert("Inscription impossible pour le moment.");

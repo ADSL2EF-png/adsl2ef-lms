@@ -914,20 +914,23 @@ async function handleLogin(request, response) {
   const email = String(body.email || "").trim().toLowerCase();
   const password = String(body.password || "");
 
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
-    // Fallback mode local
+  async function loginWithLocalState() {
     const state = await loadState();
     const user = state.users.find((u) => u.email.toLowerCase() === email);
-    if (!user || !verifyPassword(password, user.passwordHash)) {
-      json(response, 401, { error: "invalid_credentials", message: "Identifiants invalides." });
-      return;
-    }
-    if (user.approvalStatus === "pending") {
-      json(response, 403, { error: "pending_approval", message: "Compte en attente de validation." });
-      return;
+    if (!user || !verifyPassword(password, user.passwordHash)) return false;
+    if (user.approvalStatus === "rejected") {
+      json(response, 403, { error: "rejected", message: "Votre demande d'accès a été refusée." });
+      return true;
     }
     resetLoginRateLimit(ip);
     json(response, 200, { accessToken: signToken(user), user: sanitizeUser(user) });
+    return true;
+  }
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
+    if (!(await loginWithLocalState())) {
+      json(response, 401, { error: "invalid_credentials", message: "Identifiants invalides." });
+    }
     return;
   }
 
@@ -943,6 +946,7 @@ async function handleLogin(request, response) {
     });
     const authData = await authRes.json();
     if (!authRes.ok) {
+      if (await loginWithLocalState()) return;
       json(response, 401, { error: "invalid_credentials", message: "Identifiants invalides." });
       return;
     }
@@ -952,10 +956,6 @@ async function handleLogin(request, response) {
 
     if (!profile) {
       json(response, 404, { error: "profile_not_found", message: "Profil introuvable." });
-      return;
-    }
-    if (profile.approval_status === "pending") {
-      json(response, 403, { error: "pending_approval", message: "Votre compte est en attente de validation par l'administrateur." });
       return;
     }
     if (profile.approval_status === "rejected") {
@@ -1005,12 +1005,12 @@ async function handleRegister(request, response) {
     const user = {
       id: randomId("usr"), name, email, role,
       bio: "", avatar: name.split(" ").map((w) => w[0]?.toUpperCase()).join("").slice(0, 2),
-      createdAt: new Date().toISOString(), approvalStatus: "pending",
+      createdAt: new Date().toISOString(), approvalStatus: "approved",
       passwordHash: createPasswordHash(password)
     };
     state.users.push(user);
     await saveState(state);
-    json(response, 201, { message: "Inscription reçue. En attente de validation.", userId: user.id });
+    json(response, 201, { accessToken: signToken(user), user: sanitizeUser(user) });
     return;
   }
 
@@ -1038,20 +1038,20 @@ async function handleRegister(request, response) {
       return;
     }
 
-    // 2. Créer le profil dans profiles avec approval_status = pending
+    // 2. Créer le profil dans profiles avec approval_status = approved
     const avatar = name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
-    await upsertSupabaseProfile({ authUserId: userId, email, name, role, avatar, approvalStatus: "pending" });
+    await upsertSupabaseProfile({ authUserId: userId, email, name, role, avatar, approvalStatus: "approved" });
 
-    // 3. Ajouter une notification pour les admins dans lms_state
+    // 3. Ajouter l'utilisateur dans lms_state pour que le compte soit disponible immédiatement
     const state = await loadState();
     const adminUsers = state.users.filter((u) => u.role === "admin");
     adminUsers.forEach((admin) => {
       state.notifications.unshift({
         id: randomId("notif"),
         userId: admin.id,
-        title: "Nouvelle inscription en attente",
-        message: `${name} (${role}) demande l'accès à la plateforme.`,
-        level: "warning",
+        title: "Nouvelle inscription",
+        message: `${name} (${role}) a rejoint la plateforme.`,
+        level: "success",
         read: false,
         createdAt: new Date().toISOString()
       });
@@ -1059,13 +1059,14 @@ async function handleRegister(request, response) {
     // Ajouter l'utilisateur dans state.users pour que l'admin le voit
     state.users.push({
       id: userId, name, email, role,
-      bio: "", avatar,
+      bio: "", avatar, passwordHash: createPasswordHash(password),
       createdAt: new Date().toISOString(),
-      approvalStatus: "pending"
+      approvalStatus: "approved"
     });
     await saveState(state);
 
-    json(response, 201, { message: "Inscription reçue. En attente de validation.", userId });
+    const createdUser = state.users.find((user) => user.id === userId);
+    json(response, 201, { accessToken: signToken(createdUser), user: sanitizeUser(createdUser) });
   } catch (err) {
     console.error("Register error:", err);
     json(response, 500, { error: "internal_error", message: "Erreur lors de l'inscription." });
@@ -1252,10 +1253,20 @@ async function handleGetProfiles(request, response) {
 }
 
 async function handleCurrentSession(request, response) {
+  const localUserId = getAuthenticatedUserId(request);
+  if (localUserId) {
+    const state = await loadState();
+    const user = state.users.find((u) => u.id === localUserId);
+    if (user) {
+      json(response, 200, { user: sanitizeUser(user) });
+      return;
+    }
+  }
+
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) {
     if (!requireBearer(request, response)) return;
     const state = await loadState();
-    const userId = getAuthenticatedUserId(request);
+    const userId = localUserId;
     const user = userId ? state.users.find((u) => u.id === userId) : null;
     if (!user) { json(response, 404, { error: "session_not_found" }); return; }
     json(response, 200, { user: sanitizeUser(user) });
