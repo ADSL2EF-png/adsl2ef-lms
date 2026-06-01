@@ -106,7 +106,9 @@ const starterData = {
     currentModuleId: null,
     currentLessonId: null,
     schoolCategory: "all",
-    schoolLevel: "all"
+    schoolLevel: "all",
+    proAudience: "all",
+    proCategory: "all"
   }
 };
 
@@ -138,6 +140,13 @@ const SCHOOL_LEVEL_OPTIONS = {
   "IB DP": ["DP1", "DP2"],
   "Adultes": ["BEPC", "BAC"]
 };
+
+const PRO_AUDIENCE_OPTIONS = [
+  { value: "teachers", label: "Enseignants" },
+  { value: "leaders", label: "Responsables d'établissement" }
+];
+
+const PRO_CATEGORY_OPTIONS = ["CAT 1", "CAT 2", "CAT 3", "CAT 4", "CAT 5"];
 
 function normalizeCourseReleaseState(release) {
   return {
@@ -199,8 +208,10 @@ function bootstrapStarterContent(seed) {
     title: "Formation Pro - Enseignants",
     category: "Formation Pro",
     level: "",
+    proAudience: "teachers",
+    proCategory: "CAT 1",
     catalogType: "pro",
-    description: "Programme de professionnalisation pour enseignants : pédagogie active, numérique éducatif, évaluation et suivi des apprenants.",
+    description: "Programme pratique pour enseignants : pédagogie active, numérique éducatif, évaluation, différenciation et suivi des apprenants.",
     image: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80",
     teacherId: teacher.id,
     status: "published",
@@ -249,8 +260,10 @@ function bootstrapStarterContent(seed) {
     title: "Formation Pro - Directeurs d'école",
     category: "Formation Pro",
     level: "",
+    proAudience: "leaders",
+    proCategory: "CAT 2",
     catalogType: "pro",
-    description: "Programme de renforcement pour directeurs et promoteurs d'établissement : gouvernance, management, qualité et pilotage scolaire.",
+    description: "Programme de renforcement pour responsables d'établissement : gouvernance, management, qualité, pilotage scolaire et suivi des équipes.",
     image: "https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1200&q=80",
     teacherId: teacher.id,
     status: "published",
@@ -548,6 +561,21 @@ function inferCourseLevel(course) {
   return "";
 }
 
+function inferProAudience(course) {
+  if (course.proAudience) return course.proAudience;
+  const text = `${course.title || ""} ${course.audience || ""} ${course.description || ""}`.toLowerCase();
+  if (text.includes("directeur") || text.includes("responsable") || text.includes("promoteur") || text.includes("établissement") || text.includes("etablissement")) return "leaders";
+  return "teachers";
+}
+
+function inferProCategory(course) {
+  if (course.proCategory) return course.proCategory;
+  const text = `${course.title || ""} ${course.audience || ""} ${course.description || ""}`;
+  const match = text.match(/cat\s*([1-5])/i);
+  if (match) return `CAT ${match[1]}`;
+  return inferProAudience(course) === "leaders" ? "CAT 2" : "CAT 1";
+}
+
 function ensureAcademicCatalog(nextState) {
   nextState.ui = {
     ...structuredClone(starterData).ui,
@@ -556,7 +584,9 @@ function ensureAcademicCatalog(nextState) {
   if (!nextState.ui.schoolLevel) nextState.ui.schoolLevel = "all";
   nextState.courses = (nextState.courses || []).map((course) => ({
     ...course,
-    level: inferCourseLevel(course)
+    level: inferCourseLevel(course),
+    proAudience: (course.catalogType || (course.category === "Formation Pro" ? "pro" : "school")) === "pro" ? inferProAudience(course) : course.proAudience,
+    proCategory: (course.catalogType || (course.category === "Formation Pro" ? "pro" : "school")) === "pro" ? inferProCategory(course) : course.proCategory
   }));
   if (!nextState.courses.some((course) => course.id === "course-ib-dp-core" || normalizeCategory(course.category) === "ib dp")) {
     const teacher = nextState.users.find((user) => user.role === "teacher") || nextState.users.find((user) => user.role === "admin") || {};
@@ -2532,6 +2562,14 @@ function getFilteredSchoolCourses() {
   });
 }
 
+function getFilteredProCourses() {
+  return getCatalogCourses("pro").filter((course) => {
+    const audienceMatches = state.ui.proAudience === "all" || (course.proAudience || inferProAudience(course)) === state.ui.proAudience;
+    const categoryMatches = state.ui.proCategory === "all" || (course.proCategory || inferProCategory(course)) === state.ui.proCategory;
+    return audienceMatches && categoryMatches;
+  });
+}
+
 function setSchoolCategory(category) {
   state.ui.schoolCategory = category;
   state.ui.schoolLevel = "all";
@@ -2540,6 +2578,17 @@ function setSchoolCategory(category) {
 
 function setSchoolLevel(level) {
   state.ui.schoolLevel = level;
+  saveState();
+}
+
+function setProAudience(audience) {
+  state.ui.proAudience = audience;
+  state.ui.proCategory = "all";
+  saveState();
+}
+
+function setProCategory(category) {
+  state.ui.proCategory = category;
   saveState();
 }
 
@@ -2557,9 +2606,21 @@ function getAvailableSchoolLevels(category) {
 }
 
 function renderCourseLevelOptions(selectedValue = "") {
-  const values = [...new Set(Object.values(SCHOOL_LEVEL_OPTIONS).flat())];
-  return [`<option value="">Non applicable / Formation Pro</option>`]
+  const values = [...new Set(Object.values(SCHOOL_LEVEL_OPTIONS).flat().concat(PRO_CATEGORY_OPTIONS))];
+  return [`<option value="">Non applicable</option>`]
     .concat(values.map((level) => `<option value="${level}" ${selectedValue === level ? "selected" : ""}>${escapeHtml(level)}</option>`))
+    .join("");
+}
+
+function renderProAudienceOptions(selectedValue = "") {
+  return [`<option value="">Non applicable / École Numérique</option>`]
+    .concat(PRO_AUDIENCE_OPTIONS.map((option) => `<option value="${option.value}" ${selectedValue === option.value ? "selected" : ""}>${escapeHtml(option.label)}</option>`))
+    .join("");
+}
+
+function renderProCategoryOptions(selectedValue = "") {
+  return [`<option value="">Non applicable / École Numérique</option>`]
+    .concat(PRO_CATEGORY_OPTIONS.map((category) => `<option value="${category}" ${selectedValue === category ? "selected" : ""}>${escapeHtml(category)}</option>`))
     .join("");
 }
 
@@ -2580,6 +2641,7 @@ function renderSellCard(course, mode) {
       <div class="toolbar" style="justify-content:space-between">
         <span class="badge ${mode === "pro" ? "warning" : "primary"}">${escapeHtml(course.audience)}</span>
         ${course.level ? `<span class="badge success">${escapeHtml(course.level)}</span>` : ""}
+        ${mode === "pro" && course.proCategory ? `<span class="badge success">${escapeHtml(course.proCategory)}</span>` : ""}
         <span class="tiny">${escapeHtml(course.duration)}</span>
       </div>
       <h3>${escapeHtml(course.title)}</h3>
@@ -2601,7 +2663,7 @@ function renderSellCard(course, mode) {
 
 function renderCatalogPage(type) {
   const isSchool = type === "school";
-  const courses = isSchool ? getFilteredSchoolCourses() : getCatalogCourses(type);
+  const courses = isSchool ? getFilteredSchoolCourses() : getFilteredProCourses();
   const total = courses.length;
   const selectedCategory = state.ui.schoolCategory || "all";
   const levelOptions = getAvailableSchoolLevels(selectedCategory);
@@ -2620,12 +2682,23 @@ function renderCatalogPage(type) {
           ${levelOptions.map((level) => `<button class="school-topnav-item ${state.ui.schoolLevel === level ? "active" : ""}" onclick="setSchoolLevel('${level}')">${escapeHtml(level)}</button>`).join("")}
         </div>
       </section>
-    ` : ""}
+    ` : `
+      <section class="school-topnav panel">
+        <div class="school-topnav-row">
+          <button class="school-topnav-item ${state.ui.proAudience === "all" ? "active" : ""}" onclick="setProAudience('all')">Tous</button>
+          ${PRO_AUDIENCE_OPTIONS.map((option) => `<button class="school-topnav-item ${state.ui.proAudience === option.value ? "active" : ""}" onclick="setProAudience('${option.value}')">${escapeHtml(option.label)}</button>`).join("")}
+        </div>
+        <div class="school-topnav-row school-level-row">
+          <button class="school-topnav-item ${state.ui.proCategory === "all" ? "active" : ""}" onclick="setProCategory('all')">Toutes CAT</button>
+          ${PRO_CATEGORY_OPTIONS.map((category) => `<button class="school-topnav-item ${state.ui.proCategory === category ? "active" : ""}" onclick="setProCategory('${category}')">${escapeHtml(category)}</button>`).join("")}
+        </div>
+      </section>
+    `}
     <section class="storefront-hero ${isSchool ? "storefront-school" : "storefront-pro"}">
       <div>
         <p class="eyebrow">${isSchool ? "École Numérique" : "Formation Pro"}</p>
-        <h2 class="hero-title">${isSchool ? "Des parcours académiques structurés pour le collège, le lycée moderne, l'enseignement technique et les adultes." : "Des formations professionnelles crédibles pour enseignants et directeurs d'école."}</h2>
-        <p class="storefront-text">${isSchool ? "L'École Numérique ADSL-2EF regroupe des parcours structurés, avec leçons, ressources, quiz, devoirs et suivi de progression. Les offres couvrent le collège, le lycée moderne, l'enseignement technique ainsi que l'école pour adultes préparant les candidats libres au BAC et au BEPC." : "La Formation Professionnelle ADSL-2EF accompagne les enseignants et les responsables d'établissement avec des programmes applicatifs, des études de cas, des outils de pilotage et un parcours certifiant. Chaque fiche est pensée comme une offre professionnelle claire et vendable."}</p>
+        <h2 class="hero-title">${isSchool ? "Des parcours académiques structurés par classe, niveau et objectif d'examen." : "Des formations professionnelles classées par public cible et par niveau CAT."}</h2>
+        <p class="storefront-text">${isSchool ? "L'École Numérique ADSL-2EF organise les cours par classe, discipline et progression. Les apprenants accèdent aux leçons, ressources, quiz, devoirs et suivis nécessaires pour avancer avec méthode." : "La Formation Pro ADSL-2EF accompagne les enseignants et les responsables d'établissement avec des modules applicatifs, des cas pratiques, des outils de pilotage et des parcours classés CAT 1 à CAT 5."}</p>
         <div class="hero-actions">
           <button class="btn-accent" onclick="${isSchool ? "setScreen('schoolCatalog')" : "setScreen('proCatalog')"}">Voir tous les cours</button>
           <button class="btn-ghost" onclick="showAuthModal('login')">Se connecter</button>
@@ -2642,7 +2715,7 @@ function renderCatalogPage(type) {
       <div class="toolbar" style="justify-content:space-between">
         <div>
           <h2 class="section-title">${isSchool ? "Catalogue École Numérique" : "Catalogue Formation Pro"}</h2>
-          <p class="section-subtitle">${isSchool ? "Des offres bien structurées pour collégiens, lycéens, apprenants du technique et adultes en reprise d'études." : "Des offres professionnelles destinées aux enseignants et aux directeurs d'école."}</p>
+          <p class="section-subtitle">${isSchool ? "Filtrez par catégorie et par classe pour retrouver rapidement le bon parcours." : "Filtrez par public cible et par catégorie CAT pour composer des cohortes lisibles."}</p>
         </div>
         <button class="btn-primary" onclick="${isSchool ? "showAuthModal('register')" : "showContactSalesModal()"}">${isSchool ? "Créer un compte et acheter" : "Demander une inscription"}</button>
       </div>
@@ -2661,9 +2734,9 @@ function renderCatalogPage(type) {
       ` : `
         <div class="school-heading-row">
           <div>
-            <span class="school-badge">Formation professionnelle</span>
+            <span class="school-badge">${escapeHtml(state.ui.proAudience === "leaders" ? "Responsables d'établissement" : state.ui.proAudience === "teachers" ? "Enseignants" : "Tous publics")}${state.ui.proCategory !== "all" ? ` · ${escapeHtml(state.ui.proCategory)}` : ""}</span>
             <h3 class="school-heading-title">Programmes certifiants pour les acteurs de l'éducation</h3>
-            <p class="section-subtitle">Choisissez votre programme, confirmez votre inscription et intégrez votre cohorte.</p>
+            <p class="section-subtitle">Choisissez une catégorie CAT, confirmez l'inscription et intégrez la cohorte adaptée.</p>
           </div>
           <div class="school-view-switch">
             <button class="school-view-switch-btn active">Programmes</button>
@@ -2721,8 +2794,8 @@ function renderLanding() {
   return `
     <section class="hero">
       <div class="hero-panel hero-gradient">
-        <h2 class="hero-title">La plateforme numérique professionnelle d'ADSL-2EF au service de l'éducation et de la formation.</h2>
-        <p class="hero-text">ADSL-2EF propose un environnement numérique structuré pour diffuser, suivre et administrer des parcours de qualité en École Numérique, École pour adultes et Formation Professionnelle. Chaque offre est présentée avec un positionnement clair, des contenus organisés et une expérience d'apprentissage sérieuse.</p>
+        <h2 class="hero-title">La plateforme ADSL-2EF pour apprendre, former et piloter avec méthode.</h2>
+        <p class="hero-text">Un espace unique pour publier des cours, vendre des parcours, suivre les apprenants et organiser les formations professionnelles des enseignants et responsables d'établissement.</p>
         <div class="hero-actions">
           <button class="btn-accent" onclick="showAuthModal('login')">Entrer dans la plateforme</button>
           <button class="btn-ghost" onclick="setScreen('schoolCatalog')">Voir l'École Numérique</button>
@@ -2740,7 +2813,7 @@ function renderLanding() {
           <div class="module-card"><strong>Collège</strong><div class="meta">Parcours de renforcement et d'accompagnement préparés pour les classes du collège.</div></div>
           <div class="module-card"><strong>Lycée moderne et technique</strong><div class="meta">Cours organisés par filière avec supports, évaluations et préparation aux examens.</div></div>
           <div class="module-card"><strong>École pour adultes</strong><div class="meta">Préparation des candidats libres au BAC et au BEPC dans un cadre flexible et motivant.</div></div>
-          <div class="module-card"><strong>Formation professionnelle</strong><div class="meta">Programmes pour enseignants et directeurs d'école, orientés pratique et gouvernance.</div></div>
+          <div class="module-card"><strong>Formation professionnelle</strong><div class="meta">Programmes classés par public cible et CAT pour enseignants, directeurs et responsables d'établissement.</div></div>
         </div>
       </div>
     </section>
@@ -2761,8 +2834,8 @@ function renderLanding() {
         </article>
         <article class="quick-card quick-pro">
           <p class="eyebrow">Formation Pro</p>
-          <h3>Programmes pour enseignants et directeurs d'école</h3>
-          <p class="meta">Une vitrine professionnelle pour présenter les parcours, valoriser l'impact et faciliter l'inscription.</p>
+          <h3>Programmes pour enseignants et responsables d'établissement</h3>
+          <p class="meta">Une vitrine professionnelle pour présenter les parcours par CAT, valoriser l'impact et faciliter l'inscription.</p>
           <button class="btn-primary" onclick="setScreen('proCatalog')">Ouvrir la page</button>
         </article>
       </div>
@@ -4889,6 +4962,8 @@ function openCourseBuilder() {
       <div class="field"><label for="course-teacher">Enseignant</label><select id="course-teacher" name="teacherId">${teachers.map((teacher) => `<option value="${teacher.id}">${escapeHtml(teacher.name)}</option>`).join("")}</select></div>
       <div class="field"><label for="course-status">Statut</label><select id="course-status" name="status"><option value="draft">Brouillon</option><option value="published">Publié</option></select></div>
       <div class="field"><label for="course-catalog-type">Type de catalogue</label><select id="course-catalog-type" name="catalogType"><option value="school">École Numérique</option><option value="pro">Formation Pro</option></select></div>
+      <div class="field"><label for="course-pro-audience">Public Formation Pro</label><select id="course-pro-audience" name="proAudience">${renderProAudienceOptions("")}</select></div>
+      <div class="field"><label for="course-pro-category">Catégorie Formation Pro</label><select id="course-pro-category" name="proCategory">${renderProCategoryOptions("")}</select></div>
       <div class="field"><label for="course-price">Prix (FCFA) — 0 = gratuit</label><input id="course-price" name="price" type="number" min="0" placeholder="Ex: 15000"></div>
       <div class="field"><label for="course-pricing-label">Libellé du prix</label><select id="course-pricing-label" name="pricingLabel">
         <option value="par trimestre">par trimestre</option>
@@ -4962,6 +5037,8 @@ function openCourseEditor(courseId) {
       <div class="field"><label for="edit-course-teacher">Enseignant</label><select id="edit-course-teacher" name="teacherId">${teachers.map((teacher) => `<option value="${teacher.id}" ${teacher.id === course.teacherId ? "selected" : ""}>${escapeHtml(teacher.name)}</option>`).join("")}</select></div>
       <div class="field"><label for="edit-course-status">Statut</label><select id="edit-course-status" name="status"><option value="draft" ${course.status === "draft" ? "selected" : ""}>Brouillon</option><option value="published" ${course.status === "published" ? "selected" : ""}>Publié</option></select></div>
       <div class="field"><label for="edit-course-catalog-type">Type de catalogue</label><select id="edit-course-catalog-type" name="catalogType"><option value="school" ${(course.catalogType || "school") === "school" ? "selected" : ""}>École Numérique</option><option value="pro" ${course.catalogType === "pro" ? "selected" : ""}>Formation Pro</option></select></div>
+      <div class="field"><label for="edit-course-pro-audience">Public Formation Pro</label><select id="edit-course-pro-audience" name="proAudience">${renderProAudienceOptions(course.proAudience || "")}</select></div>
+      <div class="field"><label for="edit-course-pro-category">Catégorie Formation Pro</label><select id="edit-course-pro-category" name="proCategory">${renderProCategoryOptions(course.proCategory || "")}</select></div>
       <div class="field"><label for="edit-course-price">Prix (FCFA) — 0 = gratuit</label><input id="edit-course-price" name="price" type="number" min="0" value="${course.price || 0}"></div>
       <div class="field"><label for="edit-course-pricing-label">Libellé du prix</label><select id="edit-course-pricing-label" name="pricingLabel">
         <option value="par trimestre" ${course.pricingLabel === "par trimestre" ? "selected" : ""}>par trimestre</option>
@@ -5898,6 +5975,8 @@ async function handleCourseCreate(event) {
     category,
     level: String(formData.get("level") || "").trim(),
     catalogType,
+    proAudience: catalogType === "pro" ? String(formData.get("proAudience") || "teachers").trim() : "",
+    proCategory: catalogType === "pro" ? String(formData.get("proCategory") || "CAT 1").trim() : "",
     description: String(formData.get("description")).trim(),
     image: String(formData.get("image")).trim() || "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80",
     teacherId: String(formData.get("teacherId")),
@@ -5949,6 +6028,8 @@ async function handleCourseEdit(event) {
   course.category = String(formData.get("category")).trim();
   course.level = String(formData.get("level") || "").trim();
   course.catalogType = String(formData.get("catalogType") || (course.category === "Formation Pro" ? "pro" : "school"));
+  course.proAudience = course.catalogType === "pro" ? String(formData.get("proAudience") || "teachers").trim() : "";
+  course.proCategory = course.catalogType === "pro" ? String(formData.get("proCategory") || "CAT 1").trim() : "";
   course.price = Number(formData.get("price")) || course.price || 0;
   course.pricingLabel = String(formData.get("pricingLabel") || course.pricingLabel || "par trimestre");
   course.audience = String(formData.get("audience")).trim();
@@ -7038,6 +7119,8 @@ window.logout = logout;
 window.setScreen = setScreen;
 window.setSchoolCategory = setSchoolCategory;
 window.setSchoolLevel = setSchoolLevel;
+window.setProAudience = setProAudience;
+window.setProCategory = setProCategory;
 window.openCourse = openCourse;
 window.openLessonResource = openLessonResource;
 window.openActivity = openActivity;
