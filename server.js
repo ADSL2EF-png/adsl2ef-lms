@@ -952,12 +952,41 @@ async function handleLogin(request, response) {
     }
 
     // Récupérer le profil depuis la table profiles
-    const profile = await loadProfileByAuthUserId(authData.user.id);
+    let profile = await loadProfileByAuthUserId(authData.user.id);
 
     if (!profile) {
-      if (await loginWithLocalState()) return;
-      json(response, 404, { error: "profile_not_found", message: "Profil introuvable." });
-      return;
+      const displayName = authData.user.user_metadata?.name
+        || authData.user.user_metadata?.full_name
+        || authData.user.email
+        || email;
+      const role = authData.user.user_metadata?.role || "student";
+      const avatar = displayName.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
+      await upsertSupabaseProfile({
+        authUserId: authData.user.id,
+        email: authData.user.email || email,
+        name: displayName,
+        role,
+        avatar,
+        approvalStatus: "approved"
+      });
+      profile = await loadProfileByAuthUserId(authData.user.id);
+
+      const state = await loadState();
+      const existing = state.users.find((user) => user.id === authData.user.id || String(user.email || "").toLowerCase() === email);
+      const stateUser = {
+        id: authData.user.id,
+        name: profile?.full_name || profile?.name || displayName,
+        email: authData.user.email || email,
+        role: profile?.role || role,
+        bio: profile?.bio || "",
+        avatar: profile?.avatar || avatar,
+        approvalStatus: "approved",
+        createdAt: profile?.created_at || authData.user.created_at || new Date().toISOString(),
+        passwordHash: createPasswordHash(password)
+      };
+      if (existing) Object.assign(existing, stateUser);
+      else state.users.push(stateUser);
+      await saveState(state);
     }
     if (profile.approval_status === "rejected") {
       json(response, 403, { error: "rejected", message: "Votre demande d'accès a été refusée." });
