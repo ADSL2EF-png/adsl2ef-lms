@@ -754,8 +754,9 @@ async function registerWithApi({ name, email, password, role }) {
   const payload = await response.json();
   if (response.status === 409) throw new Error("email_exists");
   if (!response.ok) throw new Error(payload?.message || "Inscription impossible");
-  // Retourner un objet minimal — l'utilisateur doit attendre validation
-  return { id: payload.userId, name, email, role, pending: true };
+  const user = normalizeRemoteUser(payload);
+  if (!user) throw new Error("missing user payload");
+  return applyApiSession(user, payload, "api");
 }
 
 async function restoreSessionWithApi() {

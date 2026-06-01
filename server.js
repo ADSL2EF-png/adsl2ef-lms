@@ -1100,12 +1100,18 @@ async function handleRegister(request, response) {
       const message = String(userData.msg || userData.message || "").toLowerCase();
       if (!message.includes("already")) {
         console.warn("Supabase public register failed:", userData);
-        await registerWithLocalState();
+        json(response, 502, {
+          error: "supabase_signup_failed",
+          message: userData.msg || userData.message || "Supabase a refuse la creation du compte."
+        });
         return;
       }
       const existingAuthUser = await findSupabaseAuthUserByEmail(email);
       if (!existingAuthUser) {
-        await registerWithLocalState();
+        json(response, 409, {
+          error: "email_exists",
+          message: "Cet email existe deja, mais le compte Supabase n'a pas pu etre retrouve."
+        });
         return;
       }
       createdAuthUser = await updateSupabaseAuthUser(existingAuthUser.id, { email, password, name, role });
@@ -1150,12 +1156,7 @@ async function handleRegister(request, response) {
     json(response, 201, { accessToken: signToken(createdUser), user: sanitizeUser(createdUser) });
   } catch (err) {
     console.error("Register error:", err);
-    try {
-      await registerWithLocalState();
-    } catch (fallbackError) {
-      console.error("Register fallback error:", fallbackError);
-      json(response, 500, { error: "internal_error", message: "Erreur lors de l'inscription." });
-    }
+    json(response, 500, { error: "internal_error", message: "Erreur lors de l'inscription Supabase." });
   }
 }
 
