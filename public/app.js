@@ -105,7 +105,8 @@ const starterData = {
     activeActivityId: null,
     currentModuleId: null,
     currentLessonId: null,
-    schoolCategory: "all"
+    schoolCategory: "all",
+    schoolLevel: "all"
   }
 };
 
@@ -121,6 +122,22 @@ const runtimeState = {
   lastSuccessfulApiAt: ""
 };
 let supabaseClient = null;
+
+const SCHOOL_CATEGORY_OPTIONS = [
+  { value: "Collège", label: "Collège" },
+  { value: "Lycée Moderne", label: "Lycée Moderne" },
+  { value: "Technique", label: "Lycée Technique" },
+  { value: "IB DP", label: "IB DP" },
+  { value: "Adultes", label: "Candidats Libres (BAC/BEPC)" }
+];
+
+const SCHOOL_LEVEL_OPTIONS = {
+  "Collège": ["6ème", "5ème", "4ème", "3ème"],
+  "Lycée Moderne": ["2nde", "Première", "Terminale"],
+  "Technique": ["2nde", "Première", "Terminale"],
+  "IB DP": ["DP1", "DP2"],
+  "Adultes": ["BEPC", "BAC"]
+};
 
 function normalizeCourseReleaseState(release) {
   return {
@@ -161,6 +178,7 @@ function bootstrapStarterContent(seed) {
     id: crypto.randomUUID(),
     title: "Collège - Mathématiques et Sciences",
     category: "Collège",
+    level: "6ème",
     catalogType: "school",
     description: "Parcours structuré pour les classes du collège avec leçons progressives, exercices corrigés, quiz et devoirs.",
     image: "https://images.unsplash.com/photo-1509228468518-180dd4864904?auto=format&fit=crop&w=1200&q=80",
@@ -180,6 +198,7 @@ function bootstrapStarterContent(seed) {
     id: crypto.randomUUID(),
     title: "Formation Pro - Enseignants",
     category: "Formation Pro",
+    level: "",
     catalogType: "pro",
     description: "Programme de professionnalisation pour enseignants : pédagogie active, numérique éducatif, évaluation et suivi des apprenants.",
     image: "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80",
@@ -199,6 +218,7 @@ function bootstrapStarterContent(seed) {
     id: crypto.randomUUID(),
     title: "Lycée Moderne - Séries A, C, D",
     category: "Lycée Moderne",
+    level: "Terminale",
     catalogType: "school",
     description: "Offre dédiée au lycée moderne avec cours par série, préparation aux évaluations, ressources PDF et entraînements réglés.",
     image: "https://images.unsplash.com/photo-1532094349884-543bc11b234d?auto=format&fit=crop&w=1200&q=80",
@@ -228,6 +248,7 @@ function bootstrapStarterContent(seed) {
     id: crypto.randomUUID(),
     title: "Formation Pro - Directeurs d'école",
     category: "Formation Pro",
+    level: "",
     catalogType: "pro",
     description: "Programme de renforcement pour directeurs et promoteurs d'établissement : gouvernance, management, qualité et pilotage scolaire.",
     image: "https://images.unsplash.com/photo-1552664730-d307ca884978?auto=format&fit=crop&w=1200&q=80",
@@ -257,6 +278,7 @@ function bootstrapStarterContent(seed) {
     id: crypto.randomUUID(),
     title: "Enseignement Technique - Filières industrielles et tertiaires",
     category: "Technique",
+    level: "Première",
     catalogType: "school",
     description: "Parcours pour l'enseignement technique avec contenus applicatifs, supports de travaux pratiques et évaluations ciblées.",
     image: "https://images.unsplash.com/photo-1581092918056-0c4c3acd3789?auto=format&fit=crop&w=1200&q=80",
@@ -286,6 +308,7 @@ function bootstrapStarterContent(seed) {
     id: crypto.randomUUID(),
     title: "École pour Adultes - Candidats libres BAC et BEPC",
     category: "Adultes",
+    level: "BAC",
     catalogType: "school",
     description: "Un parcours flexible pour adultes préparant le BEPC ou le BAC en candidature libre, avec soutien méthodologique et suivi motivant.",
     image: "https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=1200&q=80",
@@ -306,6 +329,36 @@ function bootstrapStarterContent(seed) {
         order: 1,
         lessons: [
           { id: crypto.randomUUID(), title: "Organisation personnelle et révision", type: "video", duration: "17 min", content: "Mettre en place une stratégie de travail adaptée à un public adulte en reprise d'études.", resources: [{ id: crypto.randomUUID(), title: "Planning de révision", type: "link", url: "#" }] }
+        ]
+      }
+    ],
+    enrolledUserIds: []
+  };
+  const course7 = {
+    id: "course-ib-dp-core",
+    title: "IB DP - Tronc commun et préparation internationale",
+    category: "IB DP",
+    level: "DP1",
+    catalogType: "school",
+    description: "Parcours d'introduction au Programme du Diplôme IB : méthodologie, langue, mathématiques, sciences, TOK et préparation aux évaluations internes.",
+    image: "https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?auto=format&fit=crop&w=1200&q=80",
+    teacherId: teacher.id,
+    status: "published",
+    audience: "IB DP1 / DP2",
+    duration: "Accès semestriel",
+    price: 30000,
+    pricingLabel: "par semestre",
+    salesTag: "International",
+    sellingPoints: ["Approche IB", "TOK et recherche", "Évaluations internes", "Méthodologie bilingue"],
+    createdAt: nowISO(),
+    modules: [
+      {
+        id: "module-ib-dp-methodology",
+        title: "Méthodologie IB DP",
+        summary: "Comprendre les attentes du Programme du Diplôme et organiser son travail.",
+        order: 1,
+        lessons: [
+          { id: "lesson-ib-dp-overview", title: "Comprendre le Programme du Diplôme", type: "reading", duration: "18 min", content: "Identifier les composantes du DP, les exigences d'évaluation, la place de TOK, CAS et Extended Essay.", resources: [{ id: "resource-ib-dp-guide", title: "Guide de démarrage IB DP", type: "pdf", url: "#" }] }
         ]
       }
     ],
@@ -354,7 +407,7 @@ function bootstrapStarterContent(seed) {
     createdBy: teacher.id,
     maxPoints: 20
   };
-  seed.courses.push(course1, course2, course3, course4, course5, course6);
+  seed.courses.push(course1, course2, course3, course4, course5, course6, course7);
   seed.activities.push(quiz1, assignment1, assignment2);
   seed.questionBank.push(
     { id: crypto.randomUUID(), courseId: course1.id, prompt: "Une fonction décroissante signifie que :", kind: "mcq", options: ["les images diminuent quand x augmente", "les images augmentent quand x augmente", "les images sont toujours nulles"], answer: "les images diminuent quand x augmente", points: 5, createdBy: teacher.id, createdAt: nowISO() },
@@ -469,6 +522,82 @@ function applyEnvironmentPersistenceDefaults(nextState) {
   return nextState;
 }
 
+function inferCourseLevel(course) {
+  const title = `${course.title || ""} ${course.audience || ""}`;
+  const explicit = course.level || course.schoolLevel || course.gradeLevel;
+  if (explicit) return explicit;
+  if (course.category === "Collège") {
+    if (/5[eè]me/i.test(title)) return "5ème";
+    if (/4[eè]me/i.test(title)) return "4ème";
+    if (/3[eè]me/i.test(title)) return "3ème";
+    return "6ème";
+  }
+  if (course.category === "Lycée Moderne" || course.category === "Technique") {
+    if (/2nde|seconde/i.test(title)) return "2nde";
+    if (/premi[eè]re|1[eè]re/i.test(title)) return "Première";
+    return "Terminale";
+  }
+  if (course.category === "IB DP") {
+    if (/dp2/i.test(title)) return "DP2";
+    return "DP1";
+  }
+  if (course.category === "Adultes") {
+    if (/bepc/i.test(title)) return "BEPC";
+    return "BAC";
+  }
+  return "";
+}
+
+function ensureAcademicCatalog(nextState) {
+  nextState.ui = {
+    ...structuredClone(starterData).ui,
+    ...(nextState.ui || {})
+  };
+  if (!nextState.ui.schoolLevel) nextState.ui.schoolLevel = "all";
+  nextState.courses = (nextState.courses || []).map((course) => ({
+    ...course,
+    level: inferCourseLevel(course)
+  }));
+  if (!nextState.courses.some((course) => course.id === "course-ib-dp-core" || normalizeCategory(course.category) === "ib dp")) {
+    const teacher = nextState.users.find((user) => user.role === "teacher") || nextState.users.find((user) => user.role === "admin") || {};
+    nextState.courses.push({
+      id: "course-ib-dp-core",
+      title: "IB DP - Tronc commun et préparation internationale",
+      category: "IB DP",
+      level: "DP1",
+      catalogType: "school",
+      description: "Parcours d'introduction au Programme du Diplôme IB : méthodologie, langue, mathématiques, sciences, TOK et préparation aux évaluations internes.",
+      image: "https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?auto=format&fit=crop&w=1200&q=80",
+      teacherId: teacher.id || "",
+      status: "published",
+      audience: "IB DP1 / DP2",
+      duration: "Accès semestriel",
+      price: 30000,
+      pricingLabel: "par semestre",
+      salesTag: "International",
+      sellingPoints: ["Approche IB", "TOK et recherche", "Évaluations internes", "Méthodologie bilingue"],
+      release: normalizeCourseReleaseState(null),
+      createdAt: nowISO(),
+      enrolledUserIds: [],
+      modules: [{
+        id: "module-ib-dp-methodology",
+        title: "Méthodologie IB DP",
+        summary: "Comprendre les attentes du Programme du Diplôme et organiser son travail.",
+        order: 1,
+        lessons: [{
+          id: "lesson-ib-dp-overview",
+          title: "Comprendre le Programme du Diplôme",
+          type: "reading",
+          duration: "18 min",
+          content: "Identifier les composantes du DP, les exigences d'évaluation, la place de TOK, CAS et Extended Essay.",
+          resources: [{ id: "resource-ib-dp-guide", title: "Guide de démarrage IB DP", type: "pdf", url: "#" }]
+        }]
+      }]
+    });
+  }
+  return nextState;
+}
+
 function migrateState(parsed) {
   const next = {
     ...structuredClone(starterData),
@@ -530,6 +659,7 @@ function migrateState(parsed) {
   next.completionRecords = parsed.completionRecords || [];
   next.certificateRecords = parsed.certificateRecords || [];
   next.paymentRecords = parsed.paymentRecords || [];
+  ensureAcademicCatalog(next);
   return next;
 }
 
@@ -2395,13 +2525,42 @@ function normalizeCategory(value) {
 
 function getFilteredSchoolCourses() {
   const courses = getCatalogCourses("school");
-  if (state.ui.schoolCategory === "all") return courses;
-  return courses.filter((course) => normalizeCategory(course.category) === normalizeCategory(state.ui.schoolCategory));
+  return courses.filter((course) => {
+    const categoryMatches = state.ui.schoolCategory === "all" || normalizeCategory(course.category) === normalizeCategory(state.ui.schoolCategory);
+    const levelMatches = state.ui.schoolLevel === "all" || normalizeCategory(course.level) === normalizeCategory(state.ui.schoolLevel);
+    return categoryMatches && levelMatches;
+  });
 }
 
 function setSchoolCategory(category) {
   state.ui.schoolCategory = category;
+  state.ui.schoolLevel = "all";
   saveState();
+}
+
+function setSchoolLevel(level) {
+  state.ui.schoolLevel = level;
+  saveState();
+}
+
+function renderSchoolCategoryOptions(selectedValue = "") {
+  return SCHOOL_CATEGORY_OPTIONS
+    .map((category) => `<option value="${category.value}" ${selectedValue === category.value ? "selected" : ""}>${escapeHtml(category.label)}</option>`)
+    .join("");
+}
+
+function getAvailableSchoolLevels(category) {
+  if (!category || category === "all") {
+    return [...new Set(Object.values(SCHOOL_LEVEL_OPTIONS).flat())];
+  }
+  return SCHOOL_LEVEL_OPTIONS[category] || [];
+}
+
+function renderCourseLevelOptions(selectedValue = "") {
+  const values = [...new Set(Object.values(SCHOOL_LEVEL_OPTIONS).flat())];
+  return [`<option value="">Non applicable / Formation Pro</option>`]
+    .concat(values.map((level) => `<option value="${level}" ${selectedValue === level ? "selected" : ""}>${escapeHtml(level)}</option>`))
+    .join("");
 }
 
 function renderSellCard(course, mode) {
@@ -2420,6 +2579,7 @@ function renderSellCard(course, mode) {
       <div class="course-cover store-cover" style="background-image:url('${escapeHtml(course.image)}')"><span>${escapeHtml(course.salesTag || course.category)}</span></div>
       <div class="toolbar" style="justify-content:space-between">
         <span class="badge ${mode === "pro" ? "warning" : "primary"}">${escapeHtml(course.audience)}</span>
+        ${course.level ? `<span class="badge success">${escapeHtml(course.level)}</span>` : ""}
         <span class="tiny">${escapeHtml(course.duration)}</span>
       </div>
       <h3>${escapeHtml(course.title)}</h3>
@@ -2443,16 +2603,21 @@ function renderCatalogPage(type) {
   const isSchool = type === "school";
   const courses = isSchool ? getFilteredSchoolCourses() : getCatalogCourses(type);
   const total = courses.length;
-  const schoolCategories = ["Collège", "Lycée Moderne", "Technique", "Adultes"];
+  const selectedCategory = state.ui.schoolCategory || "all";
+  const levelOptions = getAvailableSchoolLevels(selectedCategory);
   return `
     ${isSchool ? `
       <section class="school-topnav panel">
         <div class="school-topnav-row">
-          ${schoolCategories.map((category) => {
-            const label = category === "Adultes" ? "Adultes / Cand. libre" : category;
-            const active = normalizeCategory(state.ui.schoolCategory === "all" ? "Collège" : state.ui.schoolCategory) === normalizeCategory(category);
-            return `<button class="school-topnav-item ${active ? "active" : ""}" onclick="setSchoolCategory('${category}')">${escapeHtml(label)}</button>`;
+          <button class="school-topnav-item ${selectedCategory === "all" ? "active" : ""}" onclick="setSchoolCategory('all')">Tous</button>
+          ${SCHOOL_CATEGORY_OPTIONS.map((category) => {
+            const active = normalizeCategory(selectedCategory) === normalizeCategory(category.value);
+            return `<button class="school-topnav-item ${active ? "active" : ""}" onclick="setSchoolCategory('${category.value}')">${escapeHtml(category.label)}</button>`;
           }).join("")}
+        </div>
+        <div class="school-topnav-row school-level-row">
+          <button class="school-topnav-item ${state.ui.schoolLevel === "all" ? "active" : ""}" onclick="setSchoolLevel('all')">Tous niveaux</button>
+          ${levelOptions.map((level) => `<button class="school-topnav-item ${state.ui.schoolLevel === level ? "active" : ""}" onclick="setSchoolLevel('${level}')">${escapeHtml(level)}</button>`).join("")}
         </div>
       </section>
     ` : ""}
@@ -2484,7 +2649,7 @@ function renderCatalogPage(type) {
       ${isSchool ? `
         <div class="school-heading-row">
           <div>
-            <span class="school-badge">${escapeHtml(state.ui.schoolCategory === "all" ? "Collège" : state.ui.schoolCategory)}</span>
+            <span class="school-badge">${escapeHtml(state.ui.schoolCategory === "all" ? "Toutes catégories" : state.ui.schoolCategory)}${state.ui.schoolLevel !== "all" ? ` · ${escapeHtml(state.ui.schoolLevel)}` : ""}</span>
             <h3 class="school-heading-title">Cours par matière et par classe</h3>
             <p class="section-subtitle">Choisissez votre parcours, achetez le cours et commencez immédiatement.</p>
           </div>
@@ -2507,7 +2672,7 @@ function renderCatalogPage(type) {
         </div>
       `}
       <div class="store-grid" style="margin-top:22px">
-        ${courses.map((course) => renderSellCard(course, type)).join("")}
+        ${courses.map((course) => renderSellCard(course, type)).join("") || `<div class="empty-state">Aucun cours publié pour ce filtre. Ajoutez un cours ou choisissez un autre niveau.</div>`}
       </div>
     </section>
   `;
@@ -4625,6 +4790,11 @@ function openPlatformSettings() {
     <h2>Paramètres du site</h2>
     <p class="section-subtitle">Modifiez ici l'identité du site, les contacts, les paiements et la synchronisation des données.</p>
     <div class="announcement" style="margin-top:14px">${escapeHtml(apiStatusText)}</div>
+    <div class="settings-status-grid">
+      <div class="module-card"><strong>Paiements sécurisés</strong><div class="meta">Activation après confirmation serveur uniquement. Fournisseurs : Mixx, Flooz, PayGate ou validation manuelle.</div></div>
+      <div class="module-card"><strong>Sessions protégées</strong><div class="meta">La connexion reste locale à chaque appareil. Le compte connecté n'est plus partagé dans l'état global.</div></div>
+      <div class="module-card"><strong>Données sensibles</strong><div class="meta">Les mots de passe ne sont pas publiés dans le snapshot LMS partagé.</div></div>
+    </div>
     <form id="settings-form" class="form-grid" style="margin-top:18px">
       <div class="field full"><label for="site-headline">Titre du site</label><input id="site-headline" name="siteHeadline" value="${escapeHtml(site.headline)}"></div>
       <div class="field full"><label for="site-banner">Bannière principale</label><input id="site-banner" name="siteBanner" value="${escapeHtml(site.banner)}"></div>
@@ -4708,12 +4878,10 @@ function openCourseBuilder() {
       <div class="field"><label for="course-title">Titre</label><input id="course-title" name="title" required></div>
       <div class="field"><label for="course-category">Catégorie</label><select id="course-category" name="category" required>
         <option value="">-- Choisir --</option>
-        <option value="Collège">Collège</option>
-        <option value="Lycée Moderne">Lycée Moderne</option>
-        <option value="Technique">Lycée Technique</option>
-        <option value="Adultes">Candidats Libres (BAC/BEPC)</option>
+        ${renderSchoolCategoryOptions("")}
         <option value="Formation Pro">Formation Professionnelle</option>
       </select></div>
+      <div class="field"><label for="course-level">Sous-catégorie / classe</label><select id="course-level" name="level">${renderCourseLevelOptions("")}</select></div>
       <div class="field"><label for="course-audience">Audience</label><input id="course-audience" name="audience" required placeholder="Terminale D, Enseignants..."></div>
       <div class="field"><label for="course-duration">Durée</label><input id="course-duration" name="duration" required placeholder="8 semaines"></div>
       <div class="field full"><label for="course-image">Image de couverture</label><input id="course-image" name="image" placeholder="https://..."></div>
@@ -4726,6 +4894,7 @@ function openCourseBuilder() {
         <option value="par trimestre">par trimestre</option>
         <option value="par mois">par mois</option>
         <option value="par an">par an</option>
+        <option value="par semestre">par semestre</option>
         <option value="par cohorte">par cohorte</option>
         <option value="programme complet">programme complet</option>
         <option value="accès à vie">accès à vie</option>
@@ -4782,12 +4951,10 @@ function openCourseEditor(courseId) {
     <form id="course-edit-form" data-course-id="${course.id}" class="form-grid" style="margin-top:18px">
       <div class="field"><label for="edit-course-title">Titre</label><input id="edit-course-title" name="title" value="${escapeHtml(course.title)}" required></div>
       <div class="field"><label for="edit-course-category">Catégorie</label><select id="edit-course-category" name="category" required>
-        <option value="Collège" ${course.category === "Collège" ? "selected" : ""}>Collège</option>
-        <option value="Lycée Moderne" ${course.category === "Lycée Moderne" ? "selected" : ""}>Lycée Moderne</option>
-        <option value="Technique" ${course.category === "Technique" ? "selected" : ""}>Lycée Technique</option>
-        <option value="Adultes" ${course.category === "Adultes" ? "selected" : ""}>Candidats Libres (BAC/BEPC)</option>
+        ${renderSchoolCategoryOptions(course.category)}
         <option value="Formation Pro" ${course.category === "Formation Pro" ? "selected" : ""}>Formation Professionnelle</option>
       </select></div>
+      <div class="field"><label for="edit-course-level">Sous-catégorie / classe</label><select id="edit-course-level" name="level">${renderCourseLevelOptions(course.level || "")}</select></div>
       <div class="field"><label for="edit-course-audience">Audience</label><input id="edit-course-audience" name="audience" value="${escapeHtml(course.audience || "")}" required></div>
       <div class="field"><label for="edit-course-duration">Durée</label><input id="edit-course-duration" name="duration" value="${escapeHtml(course.duration || "")}" required></div>
       <div class="field full"><label for="edit-course-image">Image</label><input id="edit-course-image" name="image" value="${escapeHtml(course.image || "")}"></div>
@@ -4800,6 +4967,7 @@ function openCourseEditor(courseId) {
         <option value="par trimestre" ${course.pricingLabel === "par trimestre" ? "selected" : ""}>par trimestre</option>
         <option value="par mois" ${course.pricingLabel === "par mois" ? "selected" : ""}>par mois</option>
         <option value="par an" ${course.pricingLabel === "par an" ? "selected" : ""}>par an</option>
+        <option value="par semestre" ${course.pricingLabel === "par semestre" ? "selected" : ""}>par semestre</option>
         <option value="par cohorte" ${course.pricingLabel === "par cohorte" ? "selected" : ""}>par cohorte</option>
         <option value="programme complet" ${course.pricingLabel === "programme complet" ? "selected" : ""}>programme complet</option>
         <option value="accès à vie" ${course.pricingLabel === "accès à vie" ? "selected" : ""}>accès à vie</option>
@@ -5294,17 +5462,23 @@ function purchaseCourse(courseId) {
   }
   const course = getCourseById(courseId);
   const payments = state.config.payments;
+  if (Number(course?.price || 0) <= 0) {
+    enrollUser(courseId, user.id);
+    return;
+  }
   const paymentChoices = [];
   if (payments.mixxEnabled) paymentChoices.push(`<button class="btn-primary" onclick="processPayment('${courseId}','mixx')">Payer avec Mixx by Yas</button>`);
   if (payments.floozEnabled) paymentChoices.push(`<button class="btn-primary" onclick="processPayment('${courseId}','flooz')">Payer avec Flooz</button>`);
   if (payments.paygateEnabled) paymentChoices.push(`<button class="btn-primary" onclick="processPayment('${courseId}','paygate')">Payer avec PayGate</button>`);
+  if (payments.mode === "manual") paymentChoices.push(`<button class="btn-ghost" onclick="processPayment('${courseId}','manual')">Demander une validation manuelle</button>`);
   openModal(`
     <h2>Paiement du parcours</h2>
     <p class="section-subtitle">Choisissez votre mode de paiement pour le cours <strong>${escapeHtml(course?.title || "")}</strong>.</p>
     <div class="module-card" style="margin-top:16px">
       <strong>Montant : ${formatPrice(course?.price || 0)}</strong>
-      <div class="meta" style="margin-top:8px">Mixx et Flooz sont disponibles selon votre configuration administrateur.</div>
+      <div class="meta" style="margin-top:8px">Mixx, Flooz et PayGate sont disponibles selon la configuration administrateur.</div>
     </div>
+    <div class="announcement" style="margin-top:14px">Sécurité paiement : le cours n'est activé qu'après confirmation serveur. Ne partagez jamais votre mot de passe ni votre reçu dans un message public.</div>
     <div class="toolbar" style="margin-top:18px">
       ${paymentChoices.join("") || `<button class="btn-primary" onclick="processPayment('${courseId}','manual')">Valider manuellement</button>`}
     </div>
@@ -5358,6 +5532,7 @@ async function processPayment(courseId, provider) {
   openModal(`
     <h2>Paiement initié</h2>
     <p class="section-subtitle">Le parcours <strong>${escapeHtml(course.title)}</strong> sera ajouté à votre espace uniquement après confirmation effective du paiement.</p>
+    <div class="announcement" style="margin-top:14px">Gardez cette référence. En cas de difficulté, l'administration peut retrouver la transaction sans vous demander votre mot de passe.</div>
     <div class="module-card" style="margin-top:16px">
       <strong>${escapeHtml(paymentProviderLabel(paymentRecord.provider))}</strong>
       <div class="meta" style="margin-top:8px">${escapeHtml(paymentStatusLabel(paymentRecord.status))}</div>
@@ -5721,6 +5896,7 @@ async function handleCourseCreate(event) {
     id: crypto.randomUUID(),
     title: String(formData.get("title")).trim(),
     category,
+    level: String(formData.get("level") || "").trim(),
     catalogType,
     description: String(formData.get("description")).trim(),
     image: String(formData.get("image")).trim() || "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80",
@@ -5771,6 +5947,7 @@ async function handleCourseEdit(event) {
   const formData = new FormData(event.currentTarget);
   course.title = String(formData.get("title")).trim();
   course.category = String(formData.get("category")).trim();
+  course.level = String(formData.get("level") || "").trim();
   course.catalogType = String(formData.get("catalogType") || (course.category === "Formation Pro" ? "pro" : "school"));
   course.price = Number(formData.get("price")) || course.price || 0;
   course.pricingLabel = String(formData.get("pricingLabel") || course.pricingLabel || "par trimestre");
@@ -6860,6 +7037,7 @@ window.showAuthModal = showAuthModal;
 window.logout = logout;
 window.setScreen = setScreen;
 window.setSchoolCategory = setSchoolCategory;
+window.setSchoolLevel = setSchoolLevel;
 window.openCourse = openCourse;
 window.openLessonResource = openLessonResource;
 window.openActivity = openActivity;

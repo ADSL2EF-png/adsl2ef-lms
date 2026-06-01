@@ -214,7 +214,8 @@ function getSecurityHeaders(origin) {
     "X-Content-Type-Options": "nosniff",
     "X-Frame-Options": "DENY",
     "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
-    "Referrer-Policy": "no-referrer"
+    "Referrer-Policy": "no-referrer",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()"
   };
 }
 
@@ -258,7 +259,9 @@ async function serveStatic(request, response) {
       "Content-Type": contentType,
       "X-Content-Type-Options": "nosniff",
       "X-Frame-Options": "DENY",
+      "Strict-Transport-Security": "max-age=31536000; includeSubDomains",
       "Referrer-Policy": "no-referrer",
+      "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
       "Access-Control-Allow-Origin": allowedOrigin,
       "Cache-Control": [".html", ".js"].includes(ext) ? "no-cache" : "public, max-age=31536000, immutable"
     };
