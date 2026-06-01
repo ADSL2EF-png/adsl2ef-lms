@@ -955,6 +955,7 @@ async function handleLogin(request, response) {
     const profile = await loadProfileByAuthUserId(authData.user.id);
 
     if (!profile) {
+      if (await loginWithLocalState()) return;
       json(response, 404, { error: "profile_not_found", message: "Profil introuvable." });
       return;
     }
