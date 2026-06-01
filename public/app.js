@@ -1768,6 +1768,8 @@ async function loadStateFromApi() {
   const persistence = getPersistenceConfig();
   if (persistence.mode !== "api" || !persistence.apiBaseUrl) return false;
   try {
+    const localCurrentUserId = state.currentUserId;
+    const localSession = { ...(state.session || {}) };
     // Charger l'état LMS
     const response = await fetch(buildApiUrl(persistence.apiBaseUrl, persistence.apiSnapshotPath), {
       method: "GET",
@@ -1778,6 +1780,10 @@ async function loadStateFromApi() {
     const snapshot = json?.payload || json?.record || json?.data || json;
     if (!snapshot || typeof snapshot !== "object") return false;
     state = migrateState(snapshot);
+    state.currentUserId = localSession.accessToken ? localCurrentUserId : null;
+    state.session = localSession.accessToken
+      ? localSession
+      : { accessToken: "", authProvider: "local", lastAuthAt: "" };
 
     // Charger les utilisateurs depuis Supabase profiles
     try {
@@ -1834,8 +1840,11 @@ function getAuthSecurity() {
 function buildApiSafeSnapshot(sourceState) {
   return {
     ...sourceState,
+    currentUserId: null,
+    session: { accessToken: "", authProvider: "api", lastAuthAt: "" },
+    ui: { ...(sourceState.ui || {}), screen: "landing" },
     users: Array.isArray(sourceState.users)
-      ? sourceState.users.map((user) => ({ ...user, password: "" }))
+      ? sourceState.users.map((user) => ({ ...user, password: "", passwordHash: "" }))
       : []
   };
 }
@@ -2265,7 +2274,7 @@ function renderLoginForm() {
     <p class="section-subtitle">Connectez-vous à votre espace personnel pour accéder à vos cours, évaluations et services pédagogiques.</p>
     <form id="login-form" class="form-grid" style="margin-top:18px">
       <div class="field full"><label for="login-email">Email</label><input id="login-email" name="email" type="email" required placeholder="votre@email.com"></div>
-      <div class="field full"><label for="login-password">Mot de passe</label><input id="login-password" name="password" type="password" required placeholder="Votre mot de passe"></div>
+      <div class="field full"><label for="login-password">Mot de passe</label><div class="password-control"><input id="login-password" name="password" type="password" required placeholder="Votre mot de passe"><button type="button" onclick="togglePasswordVisibility('login-password', this)">Voir</button></div></div>
       <div class="field full"><button class="btn-primary" type="submit">Se connecter</button></div>
     </form>
   `;
@@ -2279,10 +2288,18 @@ function renderRegisterForm() {
       <div class="field"><label for="reg-name">Nom complet</label><input id="reg-name" name="name" required placeholder="Nom complet"></div>
       <div class="field"><label for="reg-role">Profil</label><select id="reg-role" name="role"><option value="student">Apprenant</option><option value="teacher">Enseignant</option></select></div>
       <div class="field full"><label for="reg-email">Email</label><input id="reg-email" name="email" type="email" required placeholder="email@domaine.com"></div>
-      <div class="field full"><label for="reg-password">Mot de passe</label><input id="reg-password" name="password" type="password" required minlength="6"></div>
+      <div class="field full"><label for="reg-password">Mot de passe</label><div class="password-control"><input id="reg-password" name="password" type="password" required minlength="6"><button type="button" onclick="togglePasswordVisibility('reg-password', this)">Voir</button></div></div>
       <div class="field full"><button class="btn-primary" type="submit">Créer le compte</button></div>
     </form>
   `;
+}
+
+function togglePasswordVisibility(inputId, button) {
+  const input = document.getElementById(inputId);
+  if (!input) return;
+  const shouldShow = input.type === "password";
+  input.type = shouldShow ? "text" : "password";
+  if (button) button.textContent = shouldShow ? "Masquer" : "Voir";
 }
 
 function showAuthModal(mode = "login") {
@@ -4676,7 +4693,7 @@ function openUserBuilder() {
       <div class="field"><label for="admin-user-name">Nom complet</label><input id="admin-user-name" name="name" required></div>
       <div class="field"><label for="admin-user-role">Profil</label><select id="admin-user-role" name="role"><option value="student">Apprenant</option><option value="teacher">Enseignant</option><option value="admin">Administrateur</option></select></div>
       <div class="field full"><label for="admin-user-email">Email</label><input id="admin-user-email" name="email" type="email" required></div>
-      <div class="field full"><label for="admin-user-password">Mot de passe</label><input id="admin-user-password" name="password" type="password" required></div>
+      <div class="field full"><label for="admin-user-password">Mot de passe</label><div class="password-control"><input id="admin-user-password" name="password" type="password" required><button type="button" onclick="togglePasswordVisibility('admin-user-password', this)">Voir</button></div></div>
       <div class="field full"><button class="btn-primary" type="submit">Créer l'utilisateur</button></div>
     </form>
   `);

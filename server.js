@@ -333,6 +333,30 @@ function sanitizeUser(user) {
   };
 }
 
+function sanitizeSharedState(state) {
+  return {
+    ...state,
+    currentUserId: null,
+    session: {
+      accessToken: "",
+      authProvider: "api",
+      lastAuthAt: ""
+    },
+    ui: {
+      ...(state.ui || {}),
+      screen: "landing"
+    },
+    users: Array.isArray(state.users)
+      ? state.users.map((user) => ({ ...user, password: "", passwordHash: "" }))
+      : []
+  };
+}
+
+function normalizePublicRegistrationRole(role) {
+  const value = String(role || "").trim().toLowerCase();
+  return value === "teacher" ? "teacher" : "student";
+}
+
 function ensureArray(value) {
   return Array.isArray(value) ? value : [];
 }
@@ -918,14 +942,14 @@ async function handleSupabaseDebug(request, response) {
 async function handleGetState(request, response) {
   if (!requireBearer(request, response)) return;
   const state = await loadState();
-  json(response, 200, { payload: state });
+  json(response, 200, { payload: sanitizeSharedState(state) });
 }
 
 async function handlePutState(request, response) {
   if (!requireBearer(request, response)) return;
   const body = await readBody(request);
   const incoming = body.payload && typeof body.payload === "object" ? body.payload : body;
-  const state = { ...structuredClone(defaultState), ...incoming };
+  const state = sanitizeSharedState({ ...structuredClone(defaultState), ...incoming });
   await saveState(state);
   json(response, 200, { payload: state });
 }
@@ -1064,7 +1088,7 @@ async function handleRegister(request, response) {
   const email = String(body.email || "").trim().toLowerCase();
   const password = String(body.password || "");
   const name = String(body.name || email).trim();
-  const role = "student";
+  const role = normalizePublicRegistrationRole(body.role);
 
   if (!email) {
     json(response, 400, { error: "missing_email", message: "Email requis." });
@@ -1355,18 +1379,42 @@ async function handleGetProfiles(request, response) {
       }
     });
     const usersData = await usersRes.json();
-    const emailMap = {};
-    (usersData.users || []).forEach((u) => { emailMap[u.id] = u.email; });
-    const enriched = (profiles || []).map((p) => ({
-      id: p.auth_user_id || p.id,
-      name: p.full_name || p.name || "",
-      email: p.email || emailMap[p.auth_user_id] || "",
-      role: p.role,
-      bio: p.bio || "",
-      avatar: p.avatar || "",
-      approvalStatus: p.approval_status,
-      createdAt: p.created_at
-    }));
+    const authUsers = usersData.users || [];
+    const profileByAuthId = {};
+    const seen = new Set();
+    (profiles || []).forEach((profile) => {
+      const id = profile.auth_user_id || profile.id;
+      if (id) profileByAuthId[id] = profile;
+    });
+    const enriched = authUsers.map((authUser) => {
+      const profile = profileByAuthId[authUser.id] || {};
+      seen.add(authUser.id);
+      const name = profile.full_name || profile.name || authUser.user_metadata?.name || authUser.user_metadata?.full_name || authUser.email || "";
+      return {
+        id: authUser.id,
+        name,
+        email: profile.email || authUser.email || "",
+        role: profile.role || authUser.user_metadata?.role || "student",
+        bio: profile.bio || "",
+        avatar: profile.avatar || name.split(" ").filter(Boolean).slice(0, 2).map((word) => word[0]?.toUpperCase()).join(""),
+        approvalStatus: profile.approval_status || "approved",
+        createdAt: profile.created_at || authUser.created_at
+      };
+    });
+    (profiles || []).forEach((profile) => {
+      const id = profile.auth_user_id || profile.id;
+      if (!id || seen.has(id)) return;
+      enriched.push({
+        id,
+        name: profile.full_name || profile.name || "",
+        email: profile.email || "",
+        role: profile.role || "student",
+        bio: profile.bio || "",
+        avatar: profile.avatar || "",
+        approvalStatus: profile.approval_status || "approved",
+        createdAt: profile.created_at
+      });
+    });
     json(response, 200, { users: enriched });
   } catch (err) {
     json(response, 500, { error: "internal_error", message: err.message });
