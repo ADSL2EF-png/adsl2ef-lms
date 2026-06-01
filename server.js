@@ -889,6 +889,32 @@ async function handleHealth(_request, response) {
   });
 }
 
+async function handleSupabaseDebug(request, response) {
+  if (!requireBearer(request, response)) return;
+  const result = {
+    supabaseUrlConfigured: Boolean(SUPABASE_URL),
+    serviceKeyConfigured: Boolean(SUPABASE_SERVICE_KEY),
+    supabaseHost: SUPABASE_URL ? new URL(SUPABASE_URL).host : "",
+    adminUsersStatus: null,
+    adminUsersMessage: ""
+  };
+  if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
+    try {
+      const res = await fetch(`${SUPABASE_URL}/auth/v1/admin/users?per_page=1`, {
+        headers: {
+          "apikey": SUPABASE_SERVICE_KEY,
+          "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`
+        }
+      });
+      result.adminUsersStatus = res.status;
+      result.adminUsersMessage = (await res.text()).slice(0, 500);
+    } catch (error) {
+      result.adminUsersMessage = error.message || "Supabase debug failed";
+    }
+  }
+  json(response, 200, result);
+}
+
 async function handleGetState(request, response) {
   if (!requireBearer(request, response)) return;
   const state = await loadState();
@@ -1655,6 +1681,7 @@ const server = http.createServer(async (request, response) => {
 
     const pathname = getRequestPath(request);
     if (request.method === "GET" && pathname === "/health") return await handleHealth(request, response);
+    if (request.method === "GET" && pathname === "/debug/supabase") return await handleSupabaseDebug(request, response);
     if (request.method === "GET" && pathname === "/auth/me") return await handleCurrentSession(request, response);
     if (request.method === "GET" && pathname === "/lms/state") return await handleGetState(request, response);
     if (request.method === "GET" && pathname === "/lms/summary") return await handleSummary(request, response);
