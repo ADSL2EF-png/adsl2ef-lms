@@ -987,32 +987,51 @@ async function handleLogin(request, response) {
         || email;
       const role = authData.user.user_metadata?.role || "student";
       const avatar = displayName.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
-      await upsertSupabaseProfile({
-        authUserId: authData.user.id,
-        email: authData.user.email || email,
-        name: displayName,
-        role,
-        avatar,
-        approvalStatus: "approved"
-      });
-      profile = await loadProfileByAuthUserId(authData.user.id);
+      try {
+        await upsertSupabaseProfile({
+          authUserId: authData.user.id,
+          email: authData.user.email || email,
+          name: displayName,
+          role,
+          avatar,
+          approvalStatus: "approved"
+        });
+        profile = await loadProfileByAuthUserId(authData.user.id);
+      } catch (profileError) {
+        console.warn("Supabase profile repair ignored:", profileError);
+      }
 
-      const state = await loadState();
-      const existing = state.users.find((user) => user.id === authData.user.id || String(user.email || "").toLowerCase() === email);
-      const stateUser = {
+      profile = profile || {
         id: authData.user.id,
-        name: profile?.full_name || profile?.name || displayName,
+        full_name: displayName,
         email: authData.user.email || email,
-        role: profile?.role || role,
-        bio: profile?.bio || "",
-        avatar: profile?.avatar || avatar,
-        approvalStatus: "approved",
-        createdAt: profile?.created_at || authData.user.created_at || new Date().toISOString(),
-        passwordHash: createPasswordHash(password)
+        role,
+        bio: "",
+        avatar,
+        approval_status: "approved",
+        created_at: authData.user.created_at || new Date().toISOString()
       };
-      if (existing) Object.assign(existing, stateUser);
-      else state.users.push(stateUser);
-      await saveState(state);
+
+      try {
+        const state = await loadState();
+        const existing = state.users.find((user) => user.id === authData.user.id || String(user.email || "").toLowerCase() === email);
+        const stateUser = {
+          id: authData.user.id,
+          name: profile?.full_name || profile?.name || displayName,
+          email: authData.user.email || email,
+          role: profile?.role || role,
+          bio: profile?.bio || "",
+          avatar: profile?.avatar || avatar,
+          approvalStatus: "approved",
+          createdAt: profile?.created_at || authData.user.created_at || new Date().toISOString(),
+          passwordHash: createPasswordHash(password)
+        };
+        if (existing) Object.assign(existing, stateUser);
+        else state.users.push(stateUser);
+        await saveState(state);
+      } catch (stateError) {
+        console.warn("LMS state repair ignored:", stateError);
+      }
     }
     if (profile.approval_status === "rejected") {
       json(response, 403, { error: "rejected", message: "Votre demande d'accès a été refusée." });
@@ -1127,32 +1146,47 @@ async function handleRegister(request, response) {
 
     // 2. Créer le profil dans profiles avec approval_status = approved
     const avatar = name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
-    await upsertSupabaseProfile({ authUserId: userId, email, name, role, avatar, approvalStatus: "approved" });
+    try {
+      await upsertSupabaseProfile({ authUserId: userId, email, name, role, avatar, approvalStatus: "approved" });
+    } catch (profileError) {
+      console.warn("Supabase profile creation ignored:", profileError);
+    }
 
     // 3. Ajouter l'utilisateur dans lms_state pour que le compte soit disponible immédiatement
-    const state = await loadState();
-    const adminUsers = state.users.filter((u) => u.role === "admin");
-    adminUsers.forEach((admin) => {
-      state.notifications.unshift({
-        id: randomId("notif"),
-        userId: admin.id,
-        title: "Nouvelle inscription",
-        message: `${name} (${role}) a rejoint la plateforme.`,
-        level: "success",
-        read: false,
-        createdAt: new Date().toISOString()
-      });
-    });
-    // Ajouter l'utilisateur dans state.users pour que l'admin le voit
-    state.users.push({
-      id: userId, name, email, role,
-      bio: "", avatar, passwordHash: createPasswordHash(password),
+    const createdUser = {
+      id: userId,
+      name,
+      email,
+      role,
+      bio: "",
+      avatar,
+      passwordHash: createPasswordHash(password),
       createdAt: new Date().toISOString(),
       approvalStatus: "approved"
-    });
-    await saveState(state);
+    };
 
-    const createdUser = state.users.find((user) => user.id === userId);
+    try {
+      const state = await loadState();
+      const adminUsers = state.users.filter((u) => u.role === "admin");
+      adminUsers.forEach((admin) => {
+        state.notifications.unshift({
+          id: randomId("notif"),
+          userId: admin.id,
+          title: "Nouvelle inscription",
+          message: `${name} (${role}) a rejoint la plateforme.`,
+          level: "success",
+          read: false,
+          createdAt: new Date().toISOString()
+        });
+      });
+      const existing = state.users.find((user) => user.id === userId || String(user.email || "").toLowerCase() === email);
+      if (existing) Object.assign(existing, createdUser);
+      else state.users.push(createdUser);
+      await saveState(state);
+    } catch (stateError) {
+      console.warn("LMS state registration ignored:", stateError);
+    }
+
     json(response, 201, { accessToken: signToken(createdUser), user: sanitizeUser(createdUser) });
   } catch (err) {
     console.error("Register error:", err);
