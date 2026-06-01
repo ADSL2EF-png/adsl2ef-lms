@@ -260,7 +260,7 @@ async function serveStatic(request, response) {
       "X-Frame-Options": "DENY",
       "Referrer-Policy": "no-referrer",
       "Access-Control-Allow-Origin": allowedOrigin,
-      "Cache-Control": ext === ".html" ? "no-cache" : "public, max-age=31536000, immutable"
+      "Cache-Control": [".html", ".js"].includes(ext) ? "no-cache" : "public, max-age=31536000, immutable"
     };
 
     // CSP uniquement sur les pages HTML
