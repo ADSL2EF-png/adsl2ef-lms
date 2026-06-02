@@ -2450,6 +2450,16 @@ function setScreen(screen, payload = {}) {
   saveState();
 }
 
+function goToDashboard() {
+  state.ui.screen = "dashboard";
+  state.ui.activeCourseId = null;
+  state.ui.activeActivityId = null;
+  state.ui.currentModuleId = null;
+  state.ui.currentLessonId = null;
+  saveState();
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
 function metricCard(label, value, trend) {
   return `<article class="metric-card"><span class="metric-label">${label}</span><strong class="metric-value">${value}</strong><div class="metric-trend">${trend}</div></article>`;
 }
@@ -2575,7 +2585,7 @@ function renderTopbar() {
   const unread = state.notifications.filter((item) => item.userId === user.id && !item.read).length;
   topbar.innerHTML = `
     ${publicNav}
-    <span class="badge primary">${roleLabels[user.role]}</span>
+    <button class="btn-ghost topbar-role-btn" onclick="goToDashboard()">${roleLabels[user.role]}</button>
     <span class="badge ${unread ? "warning" : "success"}">${unread} notification${unread > 1 ? "s" : ""}</span>
     <span class="badge">${escapeHtml(user.avatar || initials(user.name))}</span>
     <button class="btn-ghost" onclick="logout()">Déconnexion</button>
@@ -2855,6 +2865,7 @@ function renderContactPage() {
 }
 
 function renderLanding() {
+  const user = getCurrentUser();
   const publishedCourses = state.courses.filter((course) => course.status === "published");
   const teachers = state.users.filter((user) => user.role === "teacher").length;
   const learners = state.users.filter((user) => user.role === "student").length;
@@ -2864,7 +2875,7 @@ function renderLanding() {
         <h2 class="hero-title">La plateforme ADSL-2EF pour apprendre, former et piloter avec méthode.</h2>
         <p class="hero-text">Un espace unique pour publier des cours, vendre des parcours, suivre les apprenants et organiser les formations professionnelles des enseignants et responsables d'établissement.</p>
         <div class="hero-actions">
-          <button class="btn-accent" onclick="showAuthModal('login')">Entrer dans la plateforme</button>
+          <button class="btn-accent" onclick="${user ? "goToDashboard()" : "showAuthModal('login')"}">${user ? "Retour à mon espace" : "Entrer dans la plateforme"}</button>
           <button class="btn-ghost" onclick="setScreen('schoolCatalog')">Voir l'École Numérique</button>
         </div>
         <div class="hero-stats">
