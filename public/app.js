@@ -870,6 +870,18 @@ async function supabaseDelete(table, filters = {}) {
   const { error } = await query;
   if (error) throw error;
 }
+async function deleteUserProfileFromSupabase(user) {
+  if (!user || !shouldUseSupabasePersistence()) return;
+  const deletions = [
+    supabaseDelete("profiles", { id: user.id }),
+    supabaseDelete("profiles", { auth_user_id: user.id })
+  ];
+  if (user.email) deletions.push(supabaseDelete("profiles", { email: user.email }));
+  const results = await Promise.allSettled(deletions);
+  if (results.every((result) => result.status === "rejected")) {
+    throw results[0].reason;
+  }
+}
 
 function getApiHeaders(useApiToken = false) {
   const persistence = getPersistenceConfig();
@@ -6712,6 +6724,13 @@ async function removeUser(userId) {
     course.enrolledUserIds = course.enrolledUserIds.filter((id) => id !== userId);
     if (course.teacherId === userId) course.teacherId = state.users.find((item) => item.role === "teacher")?.id || course.teacherId;
   });
+  if (shouldUseSupabasePersistence()) {
+    try {
+      await deleteUserProfileFromSupabase(user);
+    } catch (error) {
+      console.warn("Supabase user delete sync ignored:", error);
+    }
+  }
   addLog(getCurrentUser().id, `Utilisateur supprimé - ${user.name}`);
   await publishPlatformEvent("user.deleted", { userId, user });
   saveState();

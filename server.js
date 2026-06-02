@@ -128,6 +128,62 @@ async function saveStateToSupabase(state) {
     console.warn("[Supabase] saveState failed:", err.message);
   }
 }
+
+function encodeSupabaseFilterValue(value) {
+  return encodeURIComponent(String(value || "").trim());
+}
+
+function uniqueNonEmpty(values) {
+  return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
+}
+
+async function deleteSupabaseProfileRows({ userId, email }) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return false;
+  const ids = uniqueNonEmpty([userId]);
+  const deletes = [];
+  ids.forEach((id) => {
+    deletes.push(supabaseFetch(`/profiles?id=eq.${encodeSupabaseFilterValue(id)}`, {
+      method: "DELETE",
+      prefer: "return=minimal",
+      headers: { "Prefer": "return=minimal" }
+    }));
+    deletes.push(supabaseFetch(`/profiles?auth_user_id=eq.${encodeSupabaseFilterValue(id)}`, {
+      method: "DELETE",
+      prefer: "return=minimal",
+      headers: { "Prefer": "return=minimal" }
+    }).catch((error) => {
+      if (!isMissingSupabaseColumnError(error, "auth_user_id")) throw error;
+    }));
+  });
+  if (email) {
+    deletes.push(supabaseFetch(`/profiles?email=eq.${encodeSupabaseFilterValue(email)}`, {
+      method: "DELETE",
+      prefer: "return=minimal",
+      headers: { "Prefer": "return=minimal" }
+    }).catch((error) => {
+      if (!isMissingSupabaseColumnError(error, "email")) throw error;
+    }));
+  }
+  await Promise.all(deletes);
+  return deletes.length > 0;
+}
+
+async function deleteSupabaseAuthUser(userId) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !userId) return false;
+  const deleteRes = await fetch(`${SUPABASE_URL}/auth/v1/admin/users/${encodeURIComponent(userId)}`, {
+    method: "DELETE",
+    headers: {
+      "apikey": SUPABASE_SERVICE_KEY,
+      "Authorization": `Bearer ${SUPABASE_SERVICE_KEY}`
+    }
+  });
+  if (deleteRes.status === 404) return false;
+  if (!deleteRes.ok) {
+    const err = await deleteRes.text();
+    throw new Error(`Supabase auth delete error ${deleteRes.status}: ${err}`);
+  }
+  return true;
+}
 const DATA_DIR = path.join(__dirname, "data");
 const STATE_FILE = path.join(DATA_DIR, "state.json");
 const EVENTS_FILE = path.join(DATA_DIR, "events.log");
@@ -1641,7 +1697,7 @@ async function handleEvents(request, response) {
   json(response, 200, { events });
 }
 
-function applyEventToState(state, eventType, payload) {
+async function applyEventToState(state, eventType, payload) {
   switch (eventType) {
     case "course.created":
     case "course.updated":
@@ -1740,6 +1796,14 @@ function applyEventToState(state, eventType, payload) {
       return {};
     case "user.deleted":
       state.users = state.users.filter((user) => user.id !== payload.userId);
+      if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
+        const email = String(payload.user?.email || "").trim().toLowerCase();
+        const authUser = email ? await findSupabaseAuthUserByEmail(email) : null;
+        const ids = uniqueNonEmpty([payload.userId, payload.user?.id, authUser?.id]);
+        await Promise.all(ids.map((id) => deleteSupabaseAuthUser(id)));
+        await Promise.all(ids.map((id) => deleteSupabaseProfileRows({ userId: id, email })));
+        if (!ids.length && email) await deleteSupabaseProfileRows({ userId: "", email });
+      }
       return { deleted: true };
     default:
       return {};
@@ -1757,7 +1821,7 @@ async function handleBusinessEvent(request, response) {
     actorId: body.actorId || null,
     payload: body.payload || {}
   };
-  const result = applyEventToState(state, event.type, event.payload);
+  const result = await applyEventToState(state, event.type, event.payload);
   await appendEvent(event);
   await saveState(state);
   json(response, 200, {
