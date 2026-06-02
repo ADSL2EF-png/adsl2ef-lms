@@ -1649,6 +1649,23 @@ function applyEventToState(state, eventType, payload) {
     case "course.restored":
       if (payload.course) replaceOrInsert(state.courses, payload.course);
       return { course: payload.course };
+    case "course.deleted": {
+      const courseId = payload.courseId || payload.course?.id;
+      if (!courseId) return {};
+      const activityIds = ensureArray(state.activities).filter((activity) => activity.courseId === courseId).map((activity) => activity.id);
+      state.courses = ensureArray(state.courses).filter((course) => course.id !== courseId);
+      state.activities = ensureArray(state.activities).filter((activity) => activity.courseId !== courseId);
+      state.questionBank = ensureArray(state.questionBank).filter((question) => question.courseId !== courseId);
+      state.submissions = ensureArray(state.submissions).filter((submission) => !activityIds.includes(submission.activityId));
+      state.completionRecords = ensureArray(state.completionRecords).filter((record) => record.courseId !== courseId);
+      state.certificateRecords = ensureArray(state.certificateRecords).filter((record) => record.courseId !== courseId);
+      state.attendanceSessions = ensureArray(state.attendanceSessions).filter((session) => session.courseId !== courseId);
+      state.announcements = ensureArray(state.announcements).filter((announcement) => announcement.courseId !== courseId);
+      state.forumThreads = ensureArray(state.forumThreads).filter((thread) => thread.courseId !== courseId);
+      state.paymentRecords = ensureArray(state.paymentRecords).filter((payment) => payment.courseId !== courseId);
+      state.pendingEnrollments = ensureArray(state.pendingEnrollments).filter((enrollment) => enrollment.courseId !== courseId);
+      return { deleted: true, courseId };
+    }
     case "activity.created":
     case "activity.updated":
       if (payload.activity) replaceOrInsert(state.activities, payload.activity);

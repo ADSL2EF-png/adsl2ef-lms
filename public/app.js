@@ -3844,7 +3844,7 @@ function renderCoursesTable() {
   return `
     <table>
       <thead><tr><th>Cours</th><th>Statut</th><th>Modules</th><th>Inscrits</th><th>Actions</th></tr></thead>
-      <tbody>${courses.map((course) => `<tr><td>${escapeHtml(course.title)}</td><td>${escapeHtml(statusLabels[course.status] || course.status)}</td><td>${course.modules.length}</td><td>${course.enrolledUserIds.length}</td><td><div class="toolbar"><button class="btn-ghost" onclick="openCourseEditor('${course.id}')">Modifier</button><button class="btn-ghost" onclick="${course.status === "archived" ? `restoreCourse('${course.id}')` : `archiveCourse('${course.id}')`}">${course.status === "archived" ? "Restaurer" : "Archiver"}</button></div></td></tr>`).join("")}</tbody>
+      <tbody>${courses.map((course) => `<tr><td>${escapeHtml(course.title)}</td><td>${escapeHtml(statusLabels[course.status] || course.status)}</td><td>${course.modules.length}</td><td>${course.enrolledUserIds.length}</td><td><div class="toolbar"><button class="btn-ghost" onclick="openCourseEditor('${course.id}')">Modifier</button><button class="btn-ghost" onclick="${course.status === "archived" ? `restoreCourse('${course.id}')` : `archiveCourse('${course.id}')`}">${course.status === "archived" ? "Restaurer" : "Archiver"}</button><button class="btn-ghost danger" onclick="removeCourse('${course.id}')">Supprimer</button></div></td></tr>`).join("")}</tbody>
     </table>
   `;
 }
@@ -6595,8 +6595,53 @@ async function restoreCourse(courseId) {
   saveState();
 }
 
-function removeCourse(courseId) {
-  archiveCourse(courseId);
+async function removeCourse(courseId) {
+  const course = getCourseById(courseId);
+  const actor = getCurrentUser();
+  if (!course || !actor || !canTeachCourse(actor, course)) return;
+  const confirmed = confirm(`Supprimer définitivement le cours "${course.title}" ? Cette action retire aussi ses activités, soumissions, présences et messages liés.`);
+  if (!confirmed) return;
+
+  const activityIds = state.activities.filter((activity) => activity.courseId === courseId).map((activity) => activity.id);
+  state.courses = state.courses.filter((item) => item.id !== courseId);
+  state.activities = state.activities.filter((activity) => activity.courseId !== courseId);
+  state.questionBank = state.questionBank.filter((question) => question.courseId !== courseId);
+  state.submissions = state.submissions.filter((submission) => !activityIds.includes(submission.activityId));
+  state.completionRecords = state.completionRecords.filter((record) => record.courseId !== courseId);
+  state.certificateRecords = state.certificateRecords.filter((record) => record.courseId !== courseId);
+  state.attendanceSessions = state.attendanceSessions.filter((session) => session.courseId !== courseId);
+  state.announcements = state.announcements.filter((announcement) => announcement.courseId !== courseId);
+  state.forumThreads = state.forumThreads.filter((thread) => thread.courseId !== courseId);
+  state.paymentRecords = state.paymentRecords.filter((payment) => payment.courseId !== courseId);
+  state.pendingEnrollments = (state.pendingEnrollments || []).filter((enrollment) => enrollment.courseId !== courseId);
+
+  if (shouldUseSupabasePersistence()) {
+    try {
+      await Promise.all([
+        ...activityIds.map((activityId) => supabaseDelete("submissions", { activity_id: activityId })),
+        supabaseDelete("completion_records", { course_id: courseId }),
+        supabaseDelete("certificate_records", { course_id: courseId }),
+        supabaseDelete("attendance_sessions", { course_id: courseId }),
+        supabaseDelete("announcements", { course_id: courseId }),
+        supabaseDelete("forum_threads", { course_id: courseId }),
+        supabaseDelete("enrollments", { course_id: courseId }),
+        ...activityIds.map((activityId) => supabaseDelete("activities", { id: activityId })),
+        supabaseDelete("courses", { id: courseId })
+      ]);
+    } catch (error) {
+      console.warn("Supabase course delete sync ignored:", error);
+    }
+  }
+
+  addLog(actor.id, `Cours supprimé - ${course.title}`);
+  await publishPlatformEvent("course.deleted", { courseId, course });
+  if (state.ui.activeCourseId === courseId) {
+    state.ui.activeCourseId = null;
+    state.ui.currentModuleId = null;
+    state.ui.currentLessonId = null;
+    state.ui.screen = "dashboard";
+  }
+  saveState();
 }
 
 async function removeModule(courseId, moduleId) {
