@@ -129,6 +129,7 @@ const SCHOOL_CATEGORY_OPTIONS = [
   { value: "Collège", label: "Collège" },
   { value: "Lycée Moderne", label: "Lycée Moderne" },
   { value: "Technique", label: "Lycée Technique" },
+  { value: "PEI", label: "PEI" },
   { value: "IB DP", label: "IB DP" },
   { value: "Adultes", label: "Candidats Libres (BAC/BEPC)" }
 ];
@@ -137,6 +138,7 @@ const SCHOOL_LEVEL_OPTIONS = {
   "Collège": ["6ème", "5ème", "4ème", "3ème"],
   "Lycée Moderne": ["2nde", "Première", "Terminale"],
   "Technique": ["2nde", "Première", "Terminale"],
+  "PEI": ["PEI 1", "PEI 2", "PEI 3", "PEI 4", "PEI 5"],
   "IB DP": ["DP1", "DP2"],
   "Adultes": ["BEPC", "BAC"]
 };
@@ -468,13 +470,13 @@ function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(starterData));
-    return applyEnvironmentPersistenceDefaults(structuredClone(starterData));
+    return ensureAcademicCatalog(applyEnvironmentPersistenceDefaults(structuredClone(starterData)));
   }
   try {
     return applyEnvironmentPersistenceDefaults(migrateState(JSON.parse(raw)));
   } catch {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(starterData));
-    return applyEnvironmentPersistenceDefaults(structuredClone(starterData));
+    return ensureAcademicCatalog(applyEnvironmentPersistenceDefaults(structuredClone(starterData)));
   }
 }
 
@@ -539,6 +541,10 @@ function inferCourseLevel(course) {
   const title = `${course.title || ""} ${course.audience || ""}`;
   const explicit = course.level || course.schoolLevel || course.gradeLevel;
   if (explicit) return explicit;
+  if (course.category === "PEI") {
+    const match = title.match(/pei\s*([1-5])/i);
+    return match ? `PEI ${match[1]}` : "PEI 1";
+  }
   if (course.category === "Collège") {
     if (/5[eè]me/i.test(title)) return "5ème";
     if (/4[eè]me/i.test(title)) return "4ème";
@@ -559,6 +565,22 @@ function inferCourseLevel(course) {
     return "BAC";
   }
   return "";
+}
+
+function normalizeCompetencies(value, course = {}) {
+  const rawItems = Array.isArray(value)
+    ? value
+    : String(value || "")
+      .split(/\r?\n|;|,/)
+      .map((item) => item.trim());
+  const items = rawItems
+    .map((item) => String(item || "").trim())
+    .filter(Boolean);
+  if (items.length) return [...new Set(items)].slice(0, 8);
+  if ((course.catalogType || "school") === "pro") {
+    return ["Analyser une situation professionnelle", "Planifier une action", "Mettre en oeuvre une pratique", "Évaluer les résultats"];
+  }
+  return ["Comprendre", "Raisonner", "Appliquer", "Communiquer"];
 }
 
 function inferProAudience(course) {
@@ -585,6 +607,7 @@ function ensureAcademicCatalog(nextState) {
   nextState.courses = (nextState.courses || []).map((course) => ({
     ...course,
     level: inferCourseLevel(course),
+    competencies: normalizeCompetencies(course.competencies, course),
     proAudience: (course.catalogType || (course.category === "Formation Pro" ? "pro" : "school")) === "pro" ? inferProAudience(course) : course.proAudience,
     proCategory: (course.catalogType || (course.category === "Formation Pro" ? "pro" : "school")) === "pro" ? inferProCategory(course) : course.proCategory
   }));
@@ -606,6 +629,7 @@ function ensureAcademicCatalog(nextState) {
       pricingLabel: "par semestre",
       salesTag: "International",
       sellingPoints: ["Approche IB", "TOK et recherche", "Évaluations internes", "Méthodologie bilingue"],
+      competencies: ["Analyser", "Rechercher", "Argumenter", "Communiquer"],
       release: normalizeCourseReleaseState(null),
       createdAt: nowISO(),
       enrolledUserIds: [],
@@ -621,6 +645,44 @@ function ensureAcademicCatalog(nextState) {
           duration: "18 min",
           content: "Identifier les composantes du DP, les exigences d'évaluation, la place de TOK, CAS et Extended Essay.",
           resources: [{ id: "resource-ib-dp-guide", title: "Guide de démarrage IB DP", type: "pdf", url: "#" }]
+        }]
+      }]
+    });
+  }
+  if (!nextState.courses.some((course) => course.id === "course-pei-core" || normalizeCategory(course.category) === "pei")) {
+    const teacher = nextState.users.find((user) => user.role === "teacher") || nextState.users.find((user) => user.role === "admin") || {};
+    nextState.courses.push({
+      id: "course-pei-core",
+      title: "PEI - Approche par compétences",
+      category: "PEI",
+      level: "PEI 1",
+      catalogType: "school",
+      description: "Parcours PEI structuré autour des concepts clés, de la recherche, de la communication et de la mise en pratique des compétences.",
+      image: "https://images.unsplash.com/photo-1497633762265-9d179a990aa6?auto=format&fit=crop&w=1200&q=80",
+      teacherId: teacher.id || "",
+      status: "published",
+      audience: "PEI 1 à PEI 5",
+      duration: "Accès semestriel",
+      price: 28000,
+      pricingLabel: "par semestre",
+      salesTag: "Approche compétences",
+      sellingPoints: ["Concepts clés", "Recherche guidée", "Critères d'évaluation", "Projet interdisciplinaire"],
+      competencies: ["Chercher", "Comprendre", "Créer", "Communiquer", "Réfléchir"],
+      release: normalizeCourseReleaseState(null),
+      createdAt: nowISO(),
+      enrolledUserIds: [],
+      modules: [{
+        id: "module-pei-competencies",
+        title: "Démarrer l'approche par compétences",
+        summary: "Identifier les compétences, les critères et les productions attendues.",
+        order: 1,
+        lessons: [{
+          id: "lesson-pei-competencies",
+          title: "Comprendre les compétences PEI",
+          type: "reading",
+          duration: "16 min",
+          content: "Découvrir comment organiser un apprentissage autour de compétences observables, de critères et de tâches complexes.",
+          resources: [{ id: "resource-pei-grid", title: "Grille de compétences PEI", type: "pdf", url: "#" }]
         }]
       }]
     });
@@ -2646,6 +2708,11 @@ function renderSellCard(course, mode) {
       </div>
       <h3>${escapeHtml(course.title)}</h3>
       <p class="meta">${escapeHtml(course.description)}</p>
+      ${(course.competencies || []).length ? `
+        <div class="competency-strip">
+          ${(course.competencies || []).slice(0, 5).map((item) => `<span class="competency-chip">${escapeHtml(item)}</span>`).join("")}
+        </div>
+      ` : ""}
       <div class="selling-points">
         ${(course.sellingPoints || []).map((point) => `<span class="selling-chip">${escapeHtml(point)}</span>`).join("")}
       </div>
@@ -4260,6 +4327,14 @@ function renderCourseWorkspace(user) {
           <div class="course-cover" style="height:220px;background-image:url('${escapeHtml(course.image)}')"><span>${escapeHtml(course.audience)}</span></div>
           <h2 class="section-title">${escapeHtml(course.title)}</h2>
           <p class="section-subtitle">${escapeHtml(course.description)}</p>
+          ${(course.competencies || []).length ? `
+            <div class="panel" style="margin-top:14px">
+              <p class="eyebrow">Compétences visées</p>
+              <div class="competency-strip">
+                ${(course.competencies || []).map((item) => `<span class="competency-chip">${escapeHtml(item)}</span>`).join("")}
+              </div>
+            </div>
+          ` : ""}
           <div class="progress"><span style="width:${progress}%"></span></div>
           <div class="toolbar" style="justify-content:space-between">
             <span class="tiny">Progression : ${progress}%</span>
@@ -4959,6 +5034,7 @@ function openCourseBuilder() {
       <div class="field"><label for="course-duration">Durée</label><input id="course-duration" name="duration" required placeholder="8 semaines"></div>
       <div class="field full"><label for="course-image">Image de couverture</label><input id="course-image" name="image" placeholder="https://..."></div>
       <div class="field full"><label for="course-description">Description</label><textarea id="course-description" name="description" required></textarea></div>
+      <div class="field full"><label for="course-competencies">Compétences visées</label><textarea id="course-competencies" name="competencies" placeholder="Une compétence par ligne : comprendre, raisonner, appliquer, communiquer..."></textarea></div>
       <div class="field"><label for="course-teacher">Enseignant</label><select id="course-teacher" name="teacherId">${teachers.map((teacher) => `<option value="${teacher.id}">${escapeHtml(teacher.name)}</option>`).join("")}</select></div>
       <div class="field"><label for="course-status">Statut</label><select id="course-status" name="status"><option value="draft">Brouillon</option><option value="published">Publié</option></select></div>
       <div class="field"><label for="course-catalog-type">Type de catalogue</label><select id="course-catalog-type" name="catalogType"><option value="school">École Numérique</option><option value="pro">Formation Pro</option></select></div>
@@ -5034,6 +5110,7 @@ function openCourseEditor(courseId) {
       <div class="field"><label for="edit-course-duration">Durée</label><input id="edit-course-duration" name="duration" value="${escapeHtml(course.duration || "")}" required></div>
       <div class="field full"><label for="edit-course-image">Image</label><input id="edit-course-image" name="image" value="${escapeHtml(course.image || "")}"></div>
       <div class="field full"><label for="edit-course-description">Description</label><textarea id="edit-course-description" name="description" required>${escapeHtml(course.description)}</textarea></div>
+      <div class="field full"><label for="edit-course-competencies">Compétences visées</label><textarea id="edit-course-competencies" name="competencies" placeholder="Une compétence par ligne">${escapeHtml((course.competencies || []).join("\n"))}</textarea></div>
       <div class="field"><label for="edit-course-teacher">Enseignant</label><select id="edit-course-teacher" name="teacherId">${teachers.map((teacher) => `<option value="${teacher.id}" ${teacher.id === course.teacherId ? "selected" : ""}>${escapeHtml(teacher.name)}</option>`).join("")}</select></div>
       <div class="field"><label for="edit-course-status">Statut</label><select id="edit-course-status" name="status"><option value="draft" ${course.status === "draft" ? "selected" : ""}>Brouillon</option><option value="published" ${course.status === "published" ? "selected" : ""}>Publié</option></select></div>
       <div class="field"><label for="edit-course-catalog-type">Type de catalogue</label><select id="edit-course-catalog-type" name="catalogType"><option value="school" ${(course.catalogType || "school") === "school" ? "selected" : ""}>École Numérique</option><option value="pro" ${course.catalogType === "pro" ? "selected" : ""}>Formation Pro</option></select></div>
@@ -5978,6 +6055,7 @@ async function handleCourseCreate(event) {
     proAudience: catalogType === "pro" ? String(formData.get("proAudience") || "teachers").trim() : "",
     proCategory: catalogType === "pro" ? String(formData.get("proCategory") || "CAT 1").trim() : "",
     description: String(formData.get("description")).trim(),
+    competencies: normalizeCompetencies(String(formData.get("competencies") || ""), { catalogType }),
     image: String(formData.get("image")).trim() || "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80",
     teacherId: String(formData.get("teacherId")),
     status: finalStatus,
@@ -6036,6 +6114,7 @@ async function handleCourseEdit(event) {
   course.duration = String(formData.get("duration")).trim();
   course.image = String(formData.get("image")).trim();
   course.description = String(formData.get("description")).trim();
+  course.competencies = normalizeCompetencies(String(formData.get("competencies") || ""), course);
   course.teacherId = String(formData.get("teacherId")).trim();
   course.status = String(formData.get("status")).trim();
   if (shouldUseSupabasePersistence()) {

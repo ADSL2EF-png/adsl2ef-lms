@@ -261,6 +261,16 @@ input:focus, select:focus, textarea:focus { outline: 2px solid rgba(23,71,166,0.
 }
 .password-control input:focus + button { border-color: rgba(23,71,166,0.3); }
 .settings-status-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-top: 14px; }
+.competency-strip { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.competency-chip {
+  border: 1px solid rgba(23,71,166,0.18);
+  background: #eef5ff;
+  color: var(--primary);
+  border-radius: 999px;
+  padding: 7px 10px;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
 textarea { min-height: 110px; resize: vertical; }
 table { width: 100%; min-width: 640px; border-collapse: collapse; }
 th, td { padding: 12px 10px; text-align: left; border-bottom: 1px solid var(--line); font-size: 0.95rem; }
