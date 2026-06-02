@@ -184,6 +184,21 @@ async function deleteSupabaseAuthUser(userId) {
   }
   return true;
 }
+
+async function deleteSupabaseCourseRows(courseId) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY || !courseId) return false;
+  try {
+    await supabaseFetch(`/courses?id=eq.${encodeSupabaseFilterValue(courseId)}`, {
+      method: "DELETE",
+      prefer: "return=minimal",
+      headers: { "Prefer": "return=minimal" }
+    });
+    return true;
+  } catch (error) {
+    console.warn("[Supabase] course delete ignored:", error.message);
+    return false;
+  }
+}
 const DATA_DIR = path.join(__dirname, "data");
 const STATE_FILE = path.join(DATA_DIR, "state.json");
 const EVENTS_FILE = path.join(DATA_DIR, "events.log");
@@ -1708,6 +1723,7 @@ async function applyEventToState(state, eventType, payload) {
     case "course.deleted": {
       const courseId = payload.courseId || payload.course?.id;
       if (!courseId) return {};
+      await deleteSupabaseCourseRows(courseId);
       const activityIds = ensureArray(state.activities).filter((activity) => activity.courseId === courseId).map((activity) => activity.id);
       state.courses = ensureArray(state.courses).filter((course) => course.id !== courseId);
       state.activities = ensureArray(state.activities).filter((activity) => activity.courseId !== courseId);
