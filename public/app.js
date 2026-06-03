@@ -2847,7 +2847,7 @@ function renderAboutPage() {
     </section>
     <section class="panel founder-message">
       <div class="founder-photo-wrap">
-        <img class="founder-photo" src="photo-promoteur-cadre.jpg" alt="ADJAGBA Pinida, Fondateur et Directeur Général d'ADSL-2EF">
+        <img class="founder-photo" src="photo-promoteur-cadre.png" alt="ADJAGBA Pinida, Fondateur et Directeur Général d'ADSL-2EF">
       </div>
       <div class="founder-copy">
         <p class="eyebrow">Mot du Promoteur</p>
@@ -5699,7 +5699,7 @@ function purchaseCourse(courseId) {
   if (payments.mixxEnabled) paymentChoices.push(`<button class="btn-primary" onclick="processPayment('${courseId}','mixx')">Payer avec Mixx by Yas</button>`);
   if (payments.floozEnabled) paymentChoices.push(`<button class="btn-primary" onclick="processPayment('${courseId}','flooz')">Payer avec Flooz</button>`);
   if (payments.paygateEnabled) paymentChoices.push(`<button class="btn-primary" onclick="processPayment('${courseId}','paygate')">Payer avec PayGate</button>`);
-  if (payments.mode === "manual") paymentChoices.push(`<button class="btn-ghost" onclick="processPayment('${courseId}','manual')">Demander une validation manuelle</button>`);
+  if (payments.mode === "manual") paymentChoices.push(`<button class="btn-ghost" onclick="processPayment('${courseId}','manual')">Payer manuellement par WhatsApp</button>`);
   openModal(`
     <h2>Paiement du parcours</h2>
     <p class="section-subtitle">Choisissez votre mode de paiement pour le cours <strong>${escapeHtml(course?.title || "")}</strong>.</p>
@@ -5709,7 +5709,7 @@ function purchaseCourse(courseId) {
     </div>
     <div class="announcement" style="margin-top:14px">Sécurité paiement : le cours n'est activé qu'après confirmation serveur. Ne partagez jamais votre mot de passe ni votre reçu dans un message public.</div>
     <div class="toolbar" style="margin-top:18px">
-      ${paymentChoices.join("") || `<button class="btn-primary" onclick="processPayment('${courseId}','manual')">Valider manuellement</button>`}
+      ${paymentChoices.join("") || `<button class="btn-primary" onclick="processPayment('${courseId}','manual')">Payer manuellement par WhatsApp</button>`}
     </div>
   `);
 }
@@ -5718,6 +5718,32 @@ async function processPayment(courseId, provider) {
   const user = getCurrentUser();
   const course = getCourseById(courseId);
   if (!user || !course) return;
+  if (provider === "manual" && !shouldUseApiPersistence()) {
+    const localPayment = upsertPaymentRecord({
+      id: crypto.randomUUID(),
+      provider: "manual",
+      courseId,
+      userId: user.id,
+      amount: course.price,
+      currency: "XOF",
+      status: "pending",
+      merchantReference: `manual-${Date.now()}-${course.id.slice(0, 8)}`,
+      createdAt: nowISO(),
+      updatedAt: nowISO()
+    });
+    saveState();
+    openManualPaymentWhatsApp(localPayment, course, user);
+    openModal(`
+      <h2>Demande envoyée vers WhatsApp</h2>
+      <p class="section-subtitle">Le message de paiement manuel est prêt dans WhatsApp. Envoyez-le à l'entreprise pour recevoir les consignes et demander la validation de votre accès.</p>
+      <div class="module-card" style="margin-top:16px">
+        <strong>${escapeHtml(course.title)}</strong>
+        <div class="meta" style="margin-top:8px">Montant : ${formatPrice(course.price || 0)}</div>
+        <div class="tiny" style="margin-top:8px">Référence : ${escapeHtml(localPayment.merchantReference || localPayment.id)}</div>
+      </div>
+    `);
+    return;
+  }
   if (!shouldUseApiPersistence()) {
     openModal(`
       <h2>Backend paiement requis</h2>
@@ -5758,6 +5784,19 @@ async function processPayment(courseId, provider) {
     level: "primary"
   });
   saveState();
+  if (provider === "manual") {
+    openManualPaymentWhatsApp(paymentRecord, course, user);
+    openModal(`
+      <h2>Demande envoyée vers WhatsApp</h2>
+      <p class="section-subtitle">Le message de paiement manuel est prêt dans WhatsApp. Envoyez-le à l'entreprise pour recevoir les consignes et demander la validation de votre accès.</p>
+      <div class="module-card" style="margin-top:16px">
+        <strong>${escapeHtml(course.title)}</strong>
+        <div class="meta" style="margin-top:8px">Montant : ${formatPrice(course.price || 0)}</div>
+        <div class="tiny" style="margin-top:8px">Référence : ${escapeHtml(paymentRecord.merchantReference || paymentRecord.id)}</div>
+      </div>
+    `);
+    return;
+  }
   openModal(`
     <h2>Paiement initié</h2>
     <p class="section-subtitle">Le parcours <strong>${escapeHtml(course.title)}</strong> sera ajouté à votre espace uniquement après confirmation effective du paiement.</p>
@@ -6119,6 +6158,27 @@ function openRecruitmentWhatsApp() {
     "Expérience :",
     "Téléphone :",
     "Disponibilité :"
+  ].join("\n");
+  const baseUrl = String(site.whatsappUrl || "").trim() || "https://wa.me/22893767621";
+  const separator = baseUrl.includes("?") ? "&" : "?";
+  window.open(`${baseUrl}${separator}text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+}
+
+function openManualPaymentWhatsApp(paymentRecord, course, user) {
+  const site = state.config.site || {};
+  const message = [
+    "Bonjour ADSL-2EF,",
+    "",
+    "Je souhaite payer un cours et demander la validation manuelle de mon accès.",
+    "",
+    `Nom : ${user.name}`,
+    `Email : ${user.email}`,
+    `Téléphone : ${user.phone || ""}`,
+    `Cours : ${course.title}`,
+    `Montant : ${formatPrice(course.price || 0)}`,
+    `Référence : ${paymentRecord.merchantReference || paymentRecord.id}`,
+    "",
+    "Merci de m'indiquer les consignes de paiement et de valider mon accès après confirmation."
   ].join("\n");
   const baseUrl = String(site.whatsappUrl || "").trim() || "https://wa.me/22893767621";
   const separator = baseUrl.includes("?") ? "&" : "?";
