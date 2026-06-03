@@ -34,8 +34,40 @@ function normalizeImageUrl(value) {
   if (driveId) return `https://lh3.googleusercontent.com/d/${encodeURIComponent(driveId)}=w1600`;
   return text;
 }
+function getDriveImageFallbackUrls(value) {
+  const driveId = extractGoogleDriveFileId(value);
+  if (!driveId) return [];
+  const id = encodeURIComponent(driveId);
+  return [
+    `https://drive.google.com/thumbnail?id=${id}&sz=w1600`,
+    `https://drive.google.com/uc?export=view&id=${id}`
+  ];
+}
 function courseImageUrl(course) {
   return normalizeImageUrl(course?.image) || "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80";
+}
+function renderCourseCover(course, label, options = {}) {
+  const height = options.height ? ` style="height:${escapeHtml(options.height)}"` : "";
+  const src = escapeHtml(courseImageUrl(course));
+  const fallbacks = escapeHtml(JSON.stringify(getDriveImageFallbackUrls(course?.image)));
+  return `<div class="course-cover"${height}><img src="${src}" alt="${escapeHtml(course?.title || "Cours")}" loading="lazy" data-fallbacks="${fallbacks}" onerror="handleImageFallback(this)"><span>${escapeHtml(label || course?.category || "Cours")}</span></div>`;
+}
+function handleImageFallback(image) {
+  if (!image) return;
+  let fallbacks = [];
+  try {
+    fallbacks = JSON.parse(image.dataset.fallbacks || "[]");
+  } catch {
+    fallbacks = [];
+  }
+  const nextUrl = fallbacks.shift();
+  image.dataset.fallbacks = JSON.stringify(fallbacks);
+  if (nextUrl) {
+    image.src = nextUrl;
+    return;
+  }
+  image.onerror = null;
+  image.src = "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80";
 }
 function getYouTubeEmbedUrl(value) {
   const text = String(value || "").trim();
@@ -2596,7 +2628,7 @@ function renderPublicCourseCard(course) {
   const activities = getActivitiesForCourse(course.id);
   return `
     <article class="course-card">
-      <div class="course-cover" style="background-image:url('${escapeHtml(courseImageUrl(course))}')"><span>${escapeHtml(course.category)}</span></div>
+      ${renderCourseCover(course, course.category)}
       <h3>${escapeHtml(course.title)}</h3>
       <p class="meta">${escapeHtml(course.description)}</p>
       <div class="badge-row">
@@ -2708,7 +2740,7 @@ function renderSellCard(course, mode) {
       : `<button class="btn-accent" onclick="showAuthModal('register')">Acheter et créer un compte</button>`;
   return `
     <article class="store-card">
-      <div class="course-cover store-cover" style="background-image:url('${escapeHtml(courseImageUrl(course))}')"><span>${escapeHtml(course.salesTag || course.category)}</span></div>
+      ${renderCourseCover(course, course.salesTag || course.category)}
       <div class="toolbar" style="justify-content:space-between">
         <span class="badge ${mode === "pro" ? "warning" : "primary"}">${escapeHtml(course.audience)}</span>
         ${course.level ? `<span class="badge success">${escapeHtml(course.level)}</span>` : ""}
@@ -3685,7 +3717,7 @@ function renderStudentCourseCard(course, user) {
   const overdueCount = getCourseOverdueCount(course, user.id);
   return `
     <article class="course-card">
-      <div class="course-cover" style="background-image:url('${escapeHtml(courseImageUrl(course))}')"><span>${escapeHtml(course.audience)}</span></div>
+      ${renderCourseCover(course, course.audience)}
       <h3>${escapeHtml(course.title)}</h3>
       <p class="meta">${escapeHtml(course.description)}</p>
       <div class="progress"><span style="width:${progress}%"></span></div>
@@ -3813,7 +3845,7 @@ function renderTeacherCourseCard(course) {
   const activities = getActivitiesForCourse(course.id);
   return `
     <article class="course-card">
-      <div class="course-cover" style="background-image:url('${escapeHtml(courseImageUrl(course))}')"><span>${escapeHtml(course.status)}</span></div>
+      ${renderCourseCover(course, course.status)}
       <h3>${escapeHtml(course.title)}</h3>
       <p class="meta">${escapeHtml(course.description)}</p>
       <div class="badge-row">
@@ -4440,7 +4472,7 @@ function renderCourseWorkspace(user) {
       </div>
       <div class="layout-split" style="margin-top:18px">
         <div class="panel" style="padding:0;border:none;box-shadow:none;background:transparent">
-          <div class="course-cover" style="height:220px;background-image:url('${escapeHtml(courseImageUrl(course))}')"><span>${escapeHtml(course.audience)}</span></div>
+          ${renderCourseCover(course, course.audience, { height: "220px" })}
           <h2 class="section-title">${escapeHtml(course.title)}</h2>
           <p class="section-subtitle">${escapeHtml(course.description)}</p>
           ${(course.competencies || []).length ? `
@@ -7505,6 +7537,7 @@ window.setSchoolCategory = setSchoolCategory;
 window.setSchoolLevel = setSchoolLevel;
 window.setProAudience = setProAudience;
 window.setProCategory = setProCategory;
+window.handleImageFallback = handleImageFallback;
 window.openRecruitmentWhatsApp = openRecruitmentWhatsApp;
 window.openCourse = openCourse;
 window.openLessonResource = openLessonResource;
