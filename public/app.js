@@ -3678,6 +3678,7 @@ function renderCourseMainMenu(course, user, activeModule, activeLesson, activiti
         </div>
       </div>
       <div class="course-mobile-chipbar">
+        <a href="#course-lesson-panel" class="chip">Cours</a>
         <a href="#course-lessons" class="chip">Leçons</a>
         <a href="#course-activities-panel" class="chip">Devoirs / quiz</a>
         <a href="#course-discussions" class="chip">Annonces</a>
@@ -4595,7 +4596,7 @@ function renderCourseWorkspace(user) {
           </div>
           ${renderCourseMainMenu(course, user, module, lesson, activities, completionMetrics, moduleMetrics)}
           ${lesson ? `
-            <section class="panel" style="margin-top:18px">
+            <section class="panel" id="course-lesson-panel" style="margin-top:18px">
               <div class="toolbar" style="justify-content:space-between">
                 <div><p class="eyebrow">Leçon active</p><h3>${escapeHtml(lesson.title)}</h3></div>
                 <div class="badge-row">
@@ -6429,7 +6430,7 @@ async function handleCourseCreate(event) {
     release: normalizeCourseReleaseState(null),
     createdAt: nowISO(),
     enrolledUserIds: [],
-    modules: [{ id: crypto.randomUUID(), title: "Module 1 - Demarrage", summary: "Module initial genere automatiquement.", order: 1, lessons: [{ id: crypto.randomUUID(), title: "Lecon d'introduction", type: "reading", duration: "10 min", content: "Ajoutez ici les objectifs, contenus et consignes de depart.", resources: [] }] }]
+    modules: [{ id: crypto.randomUUID(), title: "Module 1 - Démarrage", summary: "Module initial généré automatiquement.", order: 1, lessons: [{ id: crypto.randomUUID(), title: "Leçon d'introduction", type: "reading", duration: "10 min", content: "Ajoutez ici les objectifs, contenus et consignes de départ.", resources: [] }] }]
   };
   state.courses.unshift(newCourse);
   if (shouldUseSupabasePersistence()) {
