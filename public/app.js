@@ -2774,14 +2774,13 @@ function renderContactPage() {
     <section class="contact-grid">
       <div class="panel">
         <h2 class="section-title">Envoyer un message</h2>
-        <p class="section-subtitle">Remplissez ce formulaire et nous vous recontactons dans les meilleurs délais.</p>
+        <p class="section-subtitle">Remplissez ce formulaire : votre demande s'ouvrira directement dans WhatsApp avec le message prêt à envoyer.</p>
         <form id="contact-form" class="form-grid" style="margin-top:18px">
           <div class="field full"><label for="contact-name">Votre nom</label><input id="contact-name" name="name" required placeholder="Prénom Nom"></div>
-          <div class="field"><label for="contact-phone">Téléphone / WhatsApp</label><input id="contact-phone" name="phone" required placeholder="${escapeHtml(site.contactPhone)}"></div>
-          <div class="field"><label for="contact-email">Email</label><input id="contact-email" name="email" type="email" placeholder="contact@email.com"></div>
+          <div class="field full"><label for="contact-phone">Téléphone / WhatsApp</label><input id="contact-phone" name="phone" required placeholder="${escapeHtml(site.contactPhone)}"></div>
           <div class="field full"><label for="contact-subject">Sujet</label><select id="contact-subject" name="subject"><option>Demande d'information</option><option>Inscription École Numérique</option><option>Alphabétisation & cours de langues</option><option>Inscription Formation Pro</option><option>Partenariat</option></select></div>
           <div class="field full"><label for="contact-message">Votre message</label><textarea id="contact-message" name="message" required placeholder="Décrivez votre demande, vos besoins ou vos questions..."></textarea></div>
-          <div class="field full"><button class="btn-accent" type="submit">Envoyer le message</button></div>
+          <div class="field full"><button class="btn-accent" type="submit">Envoyer sur WhatsApp</button></div>
         </form>
       </div>
       <div class="panel contact-panel">
@@ -2789,7 +2788,6 @@ function renderContactPage() {
         <div class="simple-list" style="margin-top:18px">
           <div class="module-card"><strong>Adresse</strong><div class="meta">${escapeHtml(site.contactAddress)}</div></div>
           <div class="module-card"><strong>WhatsApp</strong><div class="meta">${escapeHtml(site.contactPhone)}</div></div>
-          <div class="module-card"><strong>Email</strong><div class="meta">${escapeHtml(site.contactEmail)}</div></div>
           <div class="module-card"><strong>Heures de réponse</strong><div class="meta">Lun-Sam : 7h00 - 20h00 · Dim : 9h00 - 18h00</div></div>
         </div>
         <div class="toolbar" style="margin-top:20px">
@@ -5963,30 +5961,24 @@ async function handleRegister(event) {
 function handleContactSubmit(event) {
   event.preventDefault();
   const formData = new FormData(event.currentTarget);
-  const admin = state.users.find((user) => user.role === "admin");
-  if (admin) {
-    state.messages.unshift({
-      id: crypto.randomUUID(),
-      fromUserId: getCurrentUser()?.id || null,
-      toUserId: admin.id,
-      subject: String(formData.get("subject")),
-      content: `${String(formData.get("name"))} · ${String(formData.get("phone"))} · ${String(formData.get("email") || "")}\n${String(formData.get("message"))}`,
-      createdAt: nowISO(),
-      read: false
-    });
-  }
-  addNotification({
-    userId: admin?.id || state.users[0].id,
-    title: "Nouveau message de contact",
-    message: `${String(formData.get("name"))} a envoyé une demande depuis la page Contact.`,
-    level: "primary"
-  });
+  const site = state.config.site || {};
+  const message = [
+    "Bonjour ADSL-2EF,",
+    "",
+    `Nom : ${String(formData.get("name") || "").trim()}`,
+    `Téléphone / WhatsApp : ${String(formData.get("phone") || "").trim()}`,
+    `Sujet : ${String(formData.get("subject") || "").trim()}`,
+    "",
+    `Message : ${String(formData.get("message") || "").trim()}`
+  ].join("\n");
+  const baseUrl = String(site.whatsappUrl || "").trim() || "https://wa.me/22893767621";
+  const separator = baseUrl.includes("?") ? "&" : "?";
+  window.open(`${baseUrl}${separator}text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
   openModal(`
-    <h2>Message envoyé</h2>
-    <p class="section-subtitle">Merci. Votre demande a été enregistrée et l'équipe ADSL-2EF vous répondra rapidement.</p>
+    <h2>WhatsApp ouvert</h2>
+    <p class="section-subtitle">Votre demande est prête dans WhatsApp. Appuyez sur envoyer pour la transmettre à l'équipe ADSL-2EF.</p>
   `);
   event.currentTarget.reset();
-  saveState();
 }
 
 async function handleCourseCreate(event) {
