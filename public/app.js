@@ -76,9 +76,9 @@ const starterData = {
     }
   },
   users: [
-    { id: crypto.randomUUID(), name: "Admin ADSL-2EF", email: "admin@adsl2ef.tg", password: "pbkdf2$915ce1deae4e61b06f0082392e95c633$859fe69b0f204c60712386d62c949c9c2c1def505f94bf1187b9380cc704b7ff", role: "admin", bio: "Supervision globale de la plateforme.", avatar: "AA", createdAt: nowISO() },
-    { id: crypto.randomUUID(), name: "Afi Mensah", email: "teacher@adsl2ef.tg", password: "pbkdf2$21e8bc9160b0ec18554559b05fabec17$b301b0b650672cd29549928c5544515decb12716d98bf3ccf8e54bdcc0f39c33", role: "teacher", bio: "Enseignante de mathématiques et coordinatrice numérique.", avatar: "AM", createdAt: nowISO() },
-    { id: crypto.randomUUID(), name: "Kodjo Etse", email: "student@adsl2ef.tg", password: "pbkdf2$94643f5bbd2e526f15a22c619ff9f1ac$6638dd832897a3d5c5187409b2191e584fe12eb3a993b210cb3cb6b709178951", role: "student", bio: "Élève de première scientifique.", avatar: "KE", createdAt: nowISO() }
+    { id: crypto.randomUUID(), name: "Admin ADSL-2EF", email: "admin@adsl2ef.tg", phone: "+228 93 76 76 21", password: "pbkdf2$915ce1deae4e61b06f0082392e95c633$859fe69b0f204c60712386d62c949c9c2c1def505f94bf1187b9380cc704b7ff", role: "admin", bio: "Supervision globale de la plateforme.", avatar: "AA", createdAt: nowISO() },
+    { id: crypto.randomUUID(), name: "Afi Mensah", email: "teacher@adsl2ef.tg", phone: "", password: "pbkdf2$21e8bc9160b0ec18554559b05fabec17$b301b0b650672cd29549928c5544515decb12716d98bf3ccf8e54bdcc0f39c33", role: "teacher", bio: "Enseignante de mathématiques et coordinatrice numérique.", avatar: "AM", createdAt: nowISO() },
+    { id: crypto.randomUUID(), name: "Kodjo Etse", email: "student@adsl2ef.tg", phone: "", password: "pbkdf2$94643f5bbd2e526f15a22c619ff9f1ac$6638dd832897a3d5c5187409b2191e584fe12eb3a993b210cb3cb6b709178951", role: "student", bio: "Élève de première scientifique.", avatar: "KE", createdAt: nowISO() }
   ],
   courses: [],
   activities: [],
@@ -854,6 +854,7 @@ function normalizeRemoteUser(payload) {
     id: source.id || crypto.randomUUID(),
     name: source.name || source.fullName || source.displayName || source.email,
     email: String(source.email).trim().toLowerCase(),
+    phone: source.phone || source.telephone || source.whatsapp || "",
     password: source.password || "",
     role: source.role || "student",
     bio: source.bio || "",
@@ -901,13 +902,13 @@ async function loginWithApi(email, password) {
   return applyApiSession(user, payload, "api");
 }
 
-async function registerWithApi({ name, email, password, role }) {
+async function registerWithApi({ name, email, phone, password, role }) {
   const persistence = getPersistenceConfig();
   // Route publique — pas de token API
   const response = await fetch(buildApiUrl(persistence.apiBaseUrl, persistence.authRegisterPath), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ name, email, password, role })
+    body: JSON.stringify({ name, email, phone, password, role })
   });
   const payload = await response.json();
   if (response.status === 409) throw new Error("email_exists");
@@ -1113,6 +1114,7 @@ async function loginWithSupabase(email, password) {
     id: profile?.id || authUser.id,
     email: authUser.email,
     name: profile?.full_name || authUser.user_metadata?.full_name || authUser.email,
+    phone: profile?.phone || authUser.user_metadata?.phone || "",
     role: profile?.role || authUser.user_metadata?.role || "student",
     bio: profile?.bio || "",
     avatar: profile?.avatar || initials(profile?.full_name || authUser.email),
@@ -1125,7 +1127,7 @@ async function loginWithSupabase(email, password) {
   return applyApiSession(user, { accessToken: data.session?.access_token }, "supabase");
 }
 
-async function registerWithSupabase({ name, email, password, role }) {
+async function registerWithSupabase({ name, email, phone, password, role }) {
   const client = getSupabaseClient();
   if (!client) throw new Error("supabase client unavailable");
   const { data, error } = await client.auth.signUp({
@@ -1134,6 +1136,7 @@ async function registerWithSupabase({ name, email, password, role }) {
     options: {
       data: {
         full_name: name,
+        phone,
         role
       }
     }
@@ -1144,6 +1147,7 @@ async function registerWithSupabase({ name, email, password, role }) {
     await ensureSupabaseProfileRecord(authUser, {
       full_name: name,
       email,
+      phone,
       role
     });
   }
@@ -1154,13 +1158,15 @@ async function registerWithSupabase({ name, email, password, role }) {
     return {
       pendingConfirmation: true,
       email,
-      name
+      name,
+      phone
     };
   }
   return {
     id: authUser?.id || crypto.randomUUID(),
     email,
     name,
+    phone,
     role,
     pending: true
   };
@@ -1175,6 +1181,7 @@ async function restoreSessionWithSupabase() {
   await ensureSupabaseProfileRecord(authUser, {
     full_name: authUser.user_metadata?.full_name || authUser.email,
     email: authUser.email,
+    phone: authUser.user_metadata?.phone || "",
     role: authUser.user_metadata?.role || "student"
   });
   const { data: profile } = await client
@@ -1186,6 +1193,7 @@ async function restoreSessionWithSupabase() {
     id: profile?.id || authUser.id,
     email: authUser.email,
     name: profile?.full_name || authUser.user_metadata?.full_name || authUser.email,
+    phone: profile?.phone || authUser.user_metadata?.phone || "",
     role: profile?.role || authUser.user_metadata?.role || "student",
     bio: profile?.bio || "",
     avatar: profile?.avatar || initials(profile?.full_name || authUser.email),
@@ -1203,6 +1211,7 @@ async function ensureSupabaseProfileRecord(authUser, profileInput = {}) {
     auth_user_id: authUser.id,
     full_name: profileInput.full_name || authUser.user_metadata?.full_name || authUser.email,
     email: String(profileInput.email || authUser.email).trim().toLowerCase(),
+    phone: profileInput.phone || authUser.user_metadata?.phone || "",
     role: isRoleAllowedForPublicRegistration(profileInput.role) ? profileInput.role : "student",
     bio: profileInput.bio || "",
     avatar: profileInput.avatar || initials(profileInput.full_name || authUser.user_metadata?.full_name || authUser.email),
@@ -1308,6 +1317,7 @@ function mapUserToSupabaseProfileRow(user) {
     id: user.id,
     full_name: user.name,
     email: user.email,
+    phone: user.phone || "",
     role: user.role,
     bio: user.bio || "",
     avatar: user.avatar || initials(user.name),
@@ -1617,6 +1627,7 @@ async function loadStateFromSupabase() {
     id: profile.id,
     name: profile.full_name,
     email: profile.email,
+    phone: profile.phone || "",
     password: "",
     role: profile.role,
     bio: profile.bio || "",
@@ -2460,6 +2471,7 @@ function renderRegisterForm() {
       <div class="field"><label for="reg-name">Nom complet</label><input id="reg-name" name="name" required placeholder="Nom complet"></div>
       <div class="field"><label for="reg-role">Profil</label><select id="reg-role" name="role"><option value="student">Apprenant</option><option value="teacher">Enseignant</option></select></div>
       <div class="field full"><label for="reg-email">Email</label><input id="reg-email" name="email" type="email" required placeholder="email@domaine.com"></div>
+      <div class="field full"><label for="reg-phone">Téléphone / WhatsApp</label><input id="reg-phone" name="phone" type="tel" placeholder="+228 ..."></div>
       <div class="field full"><label for="reg-password">Mot de passe</label><div class="password-control"><input id="reg-password" name="password" type="password" required minlength="6"><button type="button" onclick="togglePasswordVisibility('reg-password', this)">Voir</button></div></div>
       <div class="field full"><button class="btn-primary" type="submit">Créer le compte</button></div>
     </form>
@@ -2511,6 +2523,7 @@ function renderTopbar() {
     <button class="btn-ghost" onclick="setScreen('landing')">Accueil</button>
     <button class="btn-ghost" onclick="setScreen('schoolCatalog')">École Numérique</button>
     <button class="btn-ghost" onclick="setScreen('proCatalog')">Formation Pro</button>
+    <button class="btn-ghost" onclick="setScreen('about')">À propos</button>
     <button class="btn-accent" onclick="setScreen('contact')">Contactez-nous</button>
   `;
   document.title = site.headline;
@@ -2796,6 +2809,43 @@ function renderContactPage() {
         </div>
         <div class="toolbar" style="margin-top:20px">
           <a class="btn-accent" href="${escapeHtml(site.whatsappUrl)}" target="_blank" rel="noreferrer">Ouvrir WhatsApp</a>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderAboutPage() {
+  const site = state.config.site;
+  return `
+    <section class="contact-hero">
+      <p class="eyebrow">À propos d'ADSL-2EF</p>
+      <h2 class="hero-title">Une association éducative engagée pour apprendre, former et accompagner.</h2>
+      <p class="contact-hero-text">ADSL-2EF développe des parcours numériques, des formations professionnelles, des cours de langues et des programmes d'alphabétisation pour répondre aux besoins des apprenants, enseignants et établissements.</p>
+      <div class="toolbar" style="margin-top:20px">
+        <button class="btn-accent" onclick="openRecruitmentWhatsApp()">Recrutement WhatsApp</button>
+        <button class="btn-ghost" onclick="setScreen('contact')">Nous contacter</button>
+      </div>
+    </section>
+    <section class="contact-grid">
+      <div class="panel">
+        <h2 class="section-title">Notre mission</h2>
+        <div class="simple-list" style="margin-top:18px">
+          <div class="module-card"><strong>École Numérique</strong><div class="meta">Structurer les cours par classe, niveau, discipline et objectif d'examen.</div></div>
+          <div class="module-card"><strong>Formation Pro</strong><div class="meta">Accompagner les enseignants et responsables d'établissement avec des modules pratiques et certifiants.</div></div>
+          <div class="module-card"><strong>Alphabétisation & langues</strong><div class="meta">Aider les jeunes et adultes à lire, écrire, communiquer et progresser dans la vie quotidienne ou professionnelle.</div></div>
+        </div>
+      </div>
+      <div class="panel contact-panel">
+        <h2 class="section-title">Rejoindre l'équipe</h2>
+        <p class="section-subtitle">Le lien WhatsApp permet aux enseignants, formateurs, animateurs d'alphabétisation et intervenants en langues de proposer leur candidature rapidement.</p>
+        <div class="simple-list" style="margin-top:18px">
+          <div class="module-card"><strong>Profils recherchés</strong><div class="meta">Enseignants, formateurs, responsables pédagogiques, animateurs et accompagnateurs.</div></div>
+          <div class="module-card"><strong>Contact WhatsApp</strong><div class="meta">${escapeHtml(site.contactPhone)}</div></div>
+          <div class="module-card"><strong>Zone d'action</strong><div class="meta">${escapeHtml(site.contactAddress)}</div></div>
+        </div>
+        <div class="toolbar" style="margin-top:20px">
+          <button class="btn-accent" onclick="openRecruitmentWhatsApp()">Postuler par WhatsApp</button>
         </div>
       </div>
     </section>
@@ -3152,6 +3202,7 @@ function generateSupabaseSeedSql() {
     auth_user_id: "null",
     full_name: toSqlValue(user.name),
     email: toSqlValue(user.email),
+    phone: toSqlValue(user.phone || ""),
     role: toSqlValue(user.role),
     bio: toSqlValue(user.bio || ""),
     avatar: toSqlValue(user.avatar || initials(user.name)),
@@ -3350,7 +3401,7 @@ function generateSupabaseSeedSql() {
     "-- ADSL-2EF LMS seed for Supabase",
     "-- Execute after schema.sql and storage.sql",
     "",
-    buildUpsertSql("profiles", ["id", "auth_user_id", "full_name", "email", "role", "bio", "avatar", "created_at", "updated_at"], profileRows),
+    buildUpsertSql("profiles", ["id", "auth_user_id", "full_name", "email", "phone", "role", "bio", "avatar", "created_at", "updated_at"], profileRows),
     buildUpsertSql("courses", ["id", "title", "category", "catalog_type", "description", "image_url", "teacher_profile_id", "status", "audience", "duration_label", "price", "pricing_label", "sales_tag", "selling_points", "created_at", "updated_at"], courseRows),
     buildUpsertSql("course_modules", ["id", "course_id", "title", "summary", "position", "created_at"], moduleRows),
     buildUpsertSql("lessons", ["id", "module_id", "title", "lesson_type", "duration_label", "content", "position", "created_at"], lessonRows),
@@ -3784,12 +3835,12 @@ function renderUsersTable() {
   const query = String(state.ui.adminUserFilter || "").trim().toLowerCase();
   const users = state.users.filter((user) => {
     if (!query) return true;
-    return user.name.toLowerCase().includes(query) || user.email.toLowerCase().includes(query) || user.role.toLowerCase().includes(query);
+    return user.name.toLowerCase().includes(query) || user.email.toLowerCase().includes(query) || String(user.phone || "").toLowerCase().includes(query) || user.role.toLowerCase().includes(query);
   });
   return `
     <table>
-      <thead><tr><th>Nom</th><th>Email</th><th>Profil</th><th>Inscription</th><th>Actions</th></tr></thead>
-      <tbody>${users.map((user) => `<tr><td>${escapeHtml(user.name)}</td><td>${escapeHtml(user.email)}</td><td>${roleLabels[user.role]}</td><td>${formatDate(user.createdAt)}</td><td><div class="toolbar"><button class="btn-ghost" onclick="openUserEditor('${user.id}')">Modifier</button><button class="btn-ghost" onclick="removeUser('${user.id}')">Supprimer</button></div></td></tr>`).join("")}</tbody>
+      <thead><tr><th>Nom</th><th>Email</th><th>Téléphone</th><th>Profil</th><th>Inscription</th><th>Actions</th></tr></thead>
+      <tbody>${users.map((user) => `<tr><td>${escapeHtml(user.name)}</td><td>${escapeHtml(user.email)}</td><td>${escapeHtml(user.phone || "-")}</td><td>${roleLabels[user.role]}</td><td>${formatDate(user.createdAt)}</td><td><div class="toolbar"><button class="btn-ghost" onclick="openUserEditor('${user.id}')">Modifier</button><button class="btn-ghost" onclick="removeUser('${user.id}')">Supprimer</button></div></td></tr>`).join("")}</tbody>
     </table>
   `;
 }
@@ -4463,6 +4514,7 @@ function renderApp() {
   const app = document.getElementById("app");
   const user = getCurrentUser();
   if (state.ui.screen === "contact") app.innerHTML = renderContactPage();
+  else if (state.ui.screen === "about") app.innerHTML = renderAboutPage();
   else if (state.ui.screen === "schoolCatalog") app.innerHTML = renderCatalogPage("school");
   else if (state.ui.screen === "proCatalog") app.innerHTML = renderCatalogPage("pro");
   else if (!user) app.innerHTML = renderLanding();
@@ -4857,6 +4909,7 @@ function openProfileModal() {
     <div class="simple-list" style="margin-top:18px">
       <div class="module-card"><strong>Nom</strong><div class="meta">${escapeHtml(user.name)}</div></div>
       <div class="module-card"><strong>Email</strong><div class="meta">${escapeHtml(user.email)}</div></div>
+      <div class="module-card"><strong>Téléphone</strong><div class="meta">${escapeHtml(user.phone || "Non renseigné")}</div></div>
       <div class="module-card"><strong>Profil</strong><div class="meta">${roleLabels[user.role]}</div></div>
       <div class="module-card"><strong>Biographie</strong><div class="meta">${escapeHtml(user.bio || "Aucune biographie")}</div></div>
     </div>
@@ -4973,6 +5026,7 @@ function openUserBuilder() {
       <div class="field"><label for="admin-user-name">Nom complet</label><input id="admin-user-name" name="name" required></div>
       <div class="field"><label for="admin-user-role">Profil</label><select id="admin-user-role" name="role"><option value="student">Apprenant</option><option value="teacher">Enseignant</option><option value="admin">Administrateur</option></select></div>
       <div class="field full"><label for="admin-user-email">Email</label><input id="admin-user-email" name="email" type="email" required></div>
+      <div class="field full"><label for="admin-user-phone">Téléphone / WhatsApp</label><input id="admin-user-phone" name="phone" type="tel" placeholder="+228 ..."></div>
       <div class="field full"><label for="admin-user-password">Mot de passe</label><div class="password-control"><input id="admin-user-password" name="password" type="password" required><button type="button" onclick="togglePasswordVisibility('admin-user-password', this)">Voir</button></div></div>
       <div class="field full"><button class="btn-primary" type="submit">Créer l'utilisateur</button></div>
     </form>
@@ -5049,6 +5103,7 @@ function openUserEditor(userId) {
       <div class="field"><label for="edit-user-name">Nom complet</label><input id="edit-user-name" name="name" value="${escapeHtml(user.name)}" required></div>
       <div class="field"><label for="edit-user-role">Profil</label><select id="edit-user-role" name="role"><option value="student" ${user.role === "student" ? "selected" : ""}>Apprenant</option><option value="teacher" ${user.role === "teacher" ? "selected" : ""}>Enseignant</option><option value="admin" ${user.role === "admin" ? "selected" : ""}>Administrateur</option></select></div>
       <div class="field full"><label for="edit-user-email">Email</label><input id="edit-user-email" name="email" type="email" value="${escapeHtml(user.email)}" required></div>
+      <div class="field full"><label for="edit-user-phone">Téléphone / WhatsApp</label><input id="edit-user-phone" name="phone" type="tel" value="${escapeHtml(user.phone || "")}" placeholder="+228 ..."></div>
       <div class="field full"><label for="edit-user-password">Mot de passe</label><input id="edit-user-password" name="password" type="text" value="${escapeHtml(user.password)}" required></div>
       <div class="field full"><label for="edit-user-bio">Biographie</label><textarea id="edit-user-bio" name="bio">${escapeHtml(user.bio || "")}</textarea></div>
       <div class="field full"><button class="btn-primary" type="submit">Enregistrer</button></div>
@@ -5066,6 +5121,7 @@ function openMyProfileEditor() {
       <div class="field"><label for="profile-name">Nom complet</label><input id="profile-name" name="name" value="${escapeHtml(user.name)}" required></div>
       <div class="field"><label for="profile-avatar">Initiales / avatar</label><input id="profile-avatar" name="avatar" value="${escapeHtml(user.avatar || initials(user.name))}" maxlength="4" placeholder="AA"></div>
       <div class="field full"><label for="profile-email">Email</label><input id="profile-email" name="email" type="email" value="${escapeHtml(user.email)}" required></div>
+      <div class="field full"><label for="profile-phone">Téléphone / WhatsApp</label><input id="profile-phone" name="phone" type="tel" value="${escapeHtml(user.phone || "")}" placeholder="+228 ..."></div>
       <div class="field full"><label for="profile-bio">Biographie</label><textarea id="profile-bio" name="bio" placeholder="Présentez brièvement votre parcours, vos objectifs ou vos responsabilités.">${escapeHtml(user.bio || "")}</textarea></div>
       <div class="field full"><button class="btn-primary" type="submit">Enregistrer mon profil</button></div>
     </form>
@@ -5919,6 +5975,7 @@ async function handleRegister(event) {
   const formData = new FormData(event.currentTarget);
   const email = String(formData.get("email")).trim().toLowerCase();
   const name = String(formData.get("name")).trim();
+  const phone = String(formData.get("phone") || "").trim();
   const password = String(formData.get("password"));
   const requestedRole = String(formData.get("role")).trim().toLowerCase();
   const role = isRoleAllowedForPublicRegistration(requestedRole) ? requestedRole : "student";
@@ -5927,6 +5984,7 @@ async function handleRegister(event) {
     if (state.users.some((user) => user.email.toLowerCase() === email)) return null;
     const user = {
       id: crypto.randomUUID(), name, email,
+      phone,
       password: await secureLocalPassword(password),
       role, bio: "Nouveau compte plateforme.", avatar: initials(name),
       createdAt: nowISO(),
@@ -5942,7 +6000,7 @@ async function handleRegister(event) {
     let user = null;
     if (shouldUseSupabasePersistence()) {
       try {
-        user = await registerWithSupabase({ name, email, password, role });
+        user = await registerWithSupabase({ name, email, phone, password, role });
       } catch (error) {
         console.warn("Supabase register fallback:", error);
         alert(`Inscription Supabase impossible : ${error.message || "erreur inconnue"}`);
@@ -5959,7 +6017,7 @@ async function handleRegister(event) {
     }
     if (!user && !shouldUseSupabasePersistence() && shouldUseApiPersistence()) {
       try {
-        user = await registerWithApi({ name, email, password, role });
+        user = await registerWithApi({ name, email, phone, password, role });
       } catch (error) {
         console.warn("API register error:", error);
         if (error.message === "email_exists") {
@@ -6008,6 +6066,24 @@ function handleContactSubmit(event) {
     <p class="section-subtitle">Votre demande est prête dans WhatsApp. Appuyez sur envoyer pour la transmettre à l'équipe ADSL-2EF.</p>
   `);
   event.currentTarget.reset();
+}
+
+function openRecruitmentWhatsApp() {
+  const site = state.config.site || {};
+  const message = [
+    "Bonjour ADSL-2EF,",
+    "",
+    "Je souhaite proposer ma candidature pour rejoindre l'équipe.",
+    "",
+    "Nom :",
+    "Profil / domaine :",
+    "Expérience :",
+    "Téléphone :",
+    "Disponibilité :"
+  ].join("\n");
+  const baseUrl = String(site.whatsappUrl || "").trim() || "https://wa.me/22893767621";
+  const separator = baseUrl.includes("?") ? "&" : "?";
+  window.open(`${baseUrl}${separator}text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
 }
 
 async function handleCourseCreate(event) {
@@ -7111,6 +7187,7 @@ async function handleAdminUserCreate(event) {
   const formData = new FormData(event.currentTarget);
   const name = String(formData.get("name")).trim();
   const email = String(formData.get("email")).trim().toLowerCase();
+  const phone = String(formData.get("phone") || "").trim();
   const password = String(formData.get("password"));
   const role = String(formData.get("role"));
 
@@ -7126,7 +7203,7 @@ async function handleAdminUserCreate(event) {
       const res = await fetch(buildApiUrl(persistence.apiBaseUrl, "/auth/admin/create"), {
         method: "POST",
         headers: getApiHeaders(true),
-        body: JSON.stringify({ name, email, password, role })
+        body: JSON.stringify({ name, email, phone, password, role })
       });
       const data = await res.json();
       if (!res.ok) {
@@ -7148,7 +7225,7 @@ async function handleAdminUserCreate(event) {
   // Fallback local
   const createdUser = {
     id: crypto.randomUUID(),
-    name, email, role,
+    name, email, phone, role,
     password: await secureLocalPassword(password),
     bio: "Compte créé par l'administration.",
     avatar: initials(name),
@@ -7170,6 +7247,7 @@ async function handleAdminUserEdit(event) {
   if (state.users.some((item) => item.id !== user.id && item.email.toLowerCase() === email)) return alert("Email deja utilise.");
   user.name = String(formData.get("name")).trim();
   user.email = email;
+  user.phone = String(formData.get("phone") || "").trim();
   const nextPassword = String(formData.get("password")).trim();
   if (nextPassword) {
     user.password = await secureLocalPassword(nextPassword);
@@ -7196,6 +7274,7 @@ async function handleProfileEdit(event) {
   }
   user.name = String(formData.get("name")).trim();
   user.email = email;
+  user.phone = String(formData.get("phone") || "").trim();
   user.bio = String(formData.get("bio")).trim();
   user.avatar = String(formData.get("avatar")).trim().slice(0, 4).toUpperCase() || initials(user.name);
   if (shouldUseSupabasePersistence()) {
@@ -7255,6 +7334,7 @@ window.setSchoolCategory = setSchoolCategory;
 window.setSchoolLevel = setSchoolLevel;
 window.setProAudience = setProAudience;
 window.setProCategory = setProCategory;
+window.openRecruitmentWhatsApp = openRecruitmentWhatsApp;
 window.openCourse = openCourse;
 window.openLessonResource = openLessonResource;
 window.openActivity = openActivity;

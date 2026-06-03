@@ -5,6 +5,7 @@ create table if not exists public.profiles (
   auth_user_id uuid unique,
   full_name text not null,
   email text not null unique,
+  phone text default '',
   role text not null check (role in ('admin', 'teacher', 'student')),
   bio text default '',
   avatar text default '',
@@ -14,6 +15,7 @@ create table if not exists public.profiles (
 );
 
 alter table public.profiles add column if not exists approval_status text not null default 'pending';
+alter table public.profiles add column if not exists phone text default '';
 
 create table if not exists public.courses (
   id uuid primary key default gen_random_uuid(),
@@ -257,6 +259,7 @@ begin
     auth_user_id,
     full_name,
     email,
+    phone,
     role,
     bio,
     avatar
@@ -265,6 +268,7 @@ begin
     new.id,
     coalesce(new.raw_user_meta_data->>'full_name', split_part(new.email, '@', 1)),
     new.email,
+    coalesce(new.raw_user_meta_data->>'phone', ''),
     coalesce(new.raw_user_meta_data->>'role', 'student'),
     '',
     upper(left(coalesce(new.raw_user_meta_data->>'full_name', new.email), 1))
@@ -272,6 +276,7 @@ begin
   on conflict (email) do update
     set auth_user_id = excluded.auth_user_id,
         full_name = excluded.full_name,
+        phone = excluded.phone,
         role = excluded.role,
         updated_at = now();
   return new;
