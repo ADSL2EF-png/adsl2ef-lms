@@ -19,6 +19,24 @@ function escapeHtml(value) {
     .replaceAll('"', "&quot;")
     .replaceAll("'", "&#39;");
 }
+function extractGoogleDriveFileId(value) {
+  const text = String(value || "").trim();
+  if (!text.includes("drive.google.com")) return "";
+  return text.match(/\/file\/d\/([^/]+)/)?.[1]
+    || text.match(/[?&]id=([^&]+)/)?.[1]
+    || text.match(/\/d\/([^/]+)/)?.[1]
+    || "";
+}
+function normalizeImageUrl(value) {
+  const text = String(value || "").trim();
+  if (!text) return "";
+  const driveId = extractGoogleDriveFileId(text);
+  if (driveId) return `https://drive.google.com/thumbnail?id=${encodeURIComponent(driveId)}&sz=w1600`;
+  return text;
+}
+function courseImageUrl(course) {
+  return normalizeImageUrl(course?.image) || "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80";
+}
 function initials(name) {
   return (name || "").split(" ").filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
 }
@@ -1236,7 +1254,7 @@ function mapCourseToSupabaseRow(course) {
     category: course.category,
     catalog_type: course.catalogType || "school",
     description: course.description || "",
-    image_url: course.image || "",
+    image_url: normalizeImageUrl(course.image) || "",
     teacher_profile_id: course.teacherId || null,
     status: course.status || "draft",
     audience: course.audience || "",
@@ -2550,7 +2568,7 @@ function renderPublicCourseCard(course) {
   const activities = getActivitiesForCourse(course.id);
   return `
     <article class="course-card">
-      <div class="course-cover" style="background-image:url('${escapeHtml(course.image)}')"><span>${escapeHtml(course.category)}</span></div>
+      <div class="course-cover" style="background-image:url('${escapeHtml(courseImageUrl(course))}')"><span>${escapeHtml(course.category)}</span></div>
       <h3>${escapeHtml(course.title)}</h3>
       <p class="meta">${escapeHtml(course.description)}</p>
       <div class="badge-row">
@@ -2662,7 +2680,7 @@ function renderSellCard(course, mode) {
       : `<button class="btn-accent" onclick="showAuthModal('register')">Acheter et créer un compte</button>`;
   return `
     <article class="store-card">
-      <div class="course-cover store-cover" style="background-image:url('${escapeHtml(course.image)}')"><span>${escapeHtml(course.salesTag || course.category)}</span></div>
+      <div class="course-cover store-cover" style="background-image:url('${escapeHtml(courseImageUrl(course))}')"><span>${escapeHtml(course.salesTag || course.category)}</span></div>
       <div class="toolbar" style="justify-content:space-between">
         <span class="badge ${mode === "pro" ? "warning" : "primary"}">${escapeHtml(course.audience)}</span>
         ${course.level ? `<span class="badge success">${escapeHtml(course.level)}</span>` : ""}
@@ -2829,14 +2847,14 @@ function renderAboutPage() {
     </section>
     <section class="panel founder-message">
       <div class="founder-photo-wrap">
-        <img class="founder-photo" src="photo-promoteur.jpg" alt="ADJAGBA Pinida, Fondateur et Directeur Général d'ADSL-2EF">
+        <img class="founder-photo" src="photo-promoteur-cadre.jpg" alt="ADJAGBA Pinida, Fondateur et Directeur Général d'ADSL-2EF">
       </div>
       <div class="founder-copy">
         <p class="eyebrow">Mot du Promoteur</p>
         <h2 class="section-title">Bienvenue sur ADSL-2EF.</h2>
         <div class="founder-text">
           <p>Depuis plusieurs années, notre engagement est d'accompagner les apprenants, les enseignants et les professionnels dans leur quête d'excellence.</p>
-          <p>Convaincus que l'éducation est le moteur du développement, nous mettons à votre disposition des solutions innovantes de soutien scolaire, de formation professionnelle et d'accompagnement pédagogique, en présentiel comme en ligne.</p>
+          <p>Convaincus que l'éducation est le moteur du développement, nous mettons à votre disposition des solutions innovantes de soutien scolaire, d'école numérique, de formation professionnelle et d'accompagnement pédagogique, en présentiel comme en ligne.</p>
           <p>Notre ambition est de rendre une éducation de qualité accessible au plus grand nombre et de préparer les citoyens de demain aux défis d'un monde en constante évolution.</p>
           <p>Je vous remercie pour votre confiance et vous souhaite une excellente expérience au sein d'ADSL-2EF.</p>
         </div>
@@ -2854,6 +2872,7 @@ function renderAboutPage() {
           <div class="module-card"><strong>École Numérique</strong><div class="meta">Structurer les cours par classe, niveau, discipline et objectif d'examen.</div></div>
           <div class="module-card"><strong>Formation Pro</strong><div class="meta">Accompagner les enseignants et responsables d'établissement avec des modules pratiques et certifiants.</div></div>
           <div class="module-card"><strong>Alphabétisation & langues</strong><div class="meta">Aider les jeunes et adultes à lire, écrire, communiquer et progresser dans la vie quotidienne ou professionnelle.</div></div>
+          <div class="module-card"><strong>Agrément officiel</strong><div class="meta">ADSL-2EF est déclarée et agréée par le Ministère de l'Administration Territoriale, de la Décentralisation et de la Chefferie Coutumière de la République Togolaise.</div></div>
         </div>
       </div>
       <div class="panel contact-panel">
@@ -3599,7 +3618,7 @@ function renderStudentCourseCard(course, user) {
   const overdueCount = getCourseOverdueCount(course, user.id);
   return `
     <article class="course-card">
-      <div class="course-cover" style="background-image:url('${escapeHtml(course.image)}')"><span>${escapeHtml(course.audience)}</span></div>
+      <div class="course-cover" style="background-image:url('${escapeHtml(courseImageUrl(course))}')"><span>${escapeHtml(course.audience)}</span></div>
       <h3>${escapeHtml(course.title)}</h3>
       <p class="meta">${escapeHtml(course.description)}</p>
       <div class="progress"><span style="width:${progress}%"></span></div>
@@ -3727,7 +3746,7 @@ function renderTeacherCourseCard(course) {
   const activities = getActivitiesForCourse(course.id);
   return `
     <article class="course-card">
-      <div class="course-cover" style="background-image:url('${escapeHtml(course.image)}')"><span>${escapeHtml(course.status)}</span></div>
+      <div class="course-cover" style="background-image:url('${escapeHtml(courseImageUrl(course))}')"><span>${escapeHtml(course.status)}</span></div>
       <h3>${escapeHtml(course.title)}</h3>
       <p class="meta">${escapeHtml(course.description)}</p>
       <div class="badge-row">
@@ -4354,7 +4373,7 @@ function renderCourseWorkspace(user) {
       </div>
       <div class="layout-split" style="margin-top:18px">
         <div class="panel" style="padding:0;border:none;box-shadow:none;background:transparent">
-          <div class="course-cover" style="height:220px;background-image:url('${escapeHtml(course.image)}')"><span>${escapeHtml(course.audience)}</span></div>
+          <div class="course-cover" style="height:220px;background-image:url('${escapeHtml(courseImageUrl(course))}')"><span>${escapeHtml(course.audience)}</span></div>
           <h2 class="section-title">${escapeHtml(course.title)}</h2>
           <p class="section-subtitle">${escapeHtml(course.description)}</p>
           ${(course.competencies || []).length ? `
@@ -5069,7 +5088,7 @@ function openCourseBuilder() {
       <div class="field"><label for="course-audience">Audience</label><input id="course-audience" name="audience" required placeholder="Terminale D, Enseignants..."></div>
       <div class="field"><label for="course-duration">Durée</label><input id="course-duration" name="duration" list="course-duration-options" required placeholder="Ex: 8 semaines ou 3 mois"></div>
       <datalist id="course-duration-options"><option value="4 semaines"></option><option value="8 semaines"></option><option value="12 semaines"></option><option value="3 mois"></option><option value="6 mois"></option><option value="9 mois"></option><option value="1 an"></option></datalist>
-      <div class="field full"><label for="course-image">Image de couverture</label><input id="course-image" name="image" placeholder="https://..."></div>
+      <div class="field full"><label for="course-image">Image de couverture</label><input id="course-image" name="image" placeholder="https://... ou lien Google Drive partagé"><span class="tiny">Format conseillé : 1600 × 900 px, ratio 16:9, JPG/WebP, moins de 1 Mo. Les liens Drive partagés sont convertis automatiquement.</span></div>
       <div class="field full"><label for="course-description">Description</label><textarea id="course-description" name="description" required></textarea></div>
       <div class="field full"><label for="course-competencies">Compétences visées</label><textarea id="course-competencies" name="competencies" placeholder="Une compétence par ligne : comprendre, raisonner, appliquer, communiquer..."></textarea></div>
       <div class="field"><label for="course-teacher">Enseignant</label><select id="course-teacher" name="teacherId">${teachers.map((teacher) => `<option value="${teacher.id}">${escapeHtml(teacher.name)}</option>`).join("")}</select></div>
@@ -5164,7 +5183,7 @@ function openCourseEditor(courseId) {
       <div class="field"><label for="edit-course-audience">Audience</label><input id="edit-course-audience" name="audience" value="${escapeHtml(course.audience || "")}" required></div>
       <div class="field"><label for="edit-course-duration">Durée</label><input id="edit-course-duration" name="duration" list="edit-course-duration-options" value="${escapeHtml(course.duration || "")}" required placeholder="Ex: 8 semaines ou 3 mois"></div>
       <datalist id="edit-course-duration-options"><option value="4 semaines"></option><option value="8 semaines"></option><option value="12 semaines"></option><option value="3 mois"></option><option value="6 mois"></option><option value="9 mois"></option><option value="1 an"></option></datalist>
-      <div class="field full"><label for="edit-course-image">Image</label><input id="edit-course-image" name="image" value="${escapeHtml(course.image || "")}"></div>
+      <div class="field full"><label for="edit-course-image">Image</label><input id="edit-course-image" name="image" value="${escapeHtml(course.image || "")}" placeholder="https://... ou lien Google Drive partagé"><span class="tiny">Format conseillé : 1600 × 900 px, ratio 16:9, JPG/WebP, moins de 1 Mo. Les liens Drive partagés sont convertis automatiquement.</span></div>
       <div class="field full"><label for="edit-course-description">Description</label><textarea id="edit-course-description" name="description" required>${escapeHtml(course.description)}</textarea></div>
       <div class="field full"><label for="edit-course-competencies">Compétences visées</label><textarea id="edit-course-competencies" name="competencies" placeholder="Une compétence par ligne">${escapeHtml((course.competencies || []).join("\n"))}</textarea></div>
       <div class="field"><label for="edit-course-teacher">Enseignant</label><select id="edit-course-teacher" name="teacherId">${teachers.map((teacher) => `<option value="${teacher.id}" ${teacher.id === course.teacherId ? "selected" : ""}>${escapeHtml(teacher.name)}</option>`).join("")}</select></div>
