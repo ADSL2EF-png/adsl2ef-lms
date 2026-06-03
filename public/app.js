@@ -139,7 +139,7 @@ const SCHOOL_LEVEL_OPTIONS = {
   "Lycée Moderne": ["2nde", "Première", "Terminale"],
   "Technique": ["2nde", "Première", "Terminale"],
   "PEI": ["PEI 1", "PEI 2", "PEI 3", "PEI 4", "PEI 5"],
-  "IB DP": ["DP1", "DP2"],
+  "IB DP": ["DP"],
   "Adultes": ["BEPC", "BAC"]
 };
 
@@ -353,13 +353,13 @@ function bootstrapStarterContent(seed) {
     id: "course-ib-dp-core",
     title: "IB DP - Tronc commun et préparation internationale",
     category: "IB DP",
-    level: "DP1",
+    level: "DP",
     catalogType: "school",
     description: "Parcours d'introduction au Programme du Diplôme IB : méthodologie, langue, mathématiques, sciences, TOK et préparation aux évaluations internes.",
     image: "https://images.unsplash.com/photo-1523580846011-d3a5bc25702b?auto=format&fit=crop&w=1200&q=80",
     teacherId: teacher.id,
     status: "published",
-    audience: "IB DP1 / DP2",
+    audience: "IB DP",
     duration: "Accès semestriel",
     price: 30000,
     pricingLabel: "par semestre",
@@ -557,8 +557,7 @@ function inferCourseLevel(course) {
     return "Terminale";
   }
   if (course.category === "IB DP") {
-    if (/dp2/i.test(title)) return "DP2";
-    return "DP1";
+    return "DP";
   }
   if (course.category === "Adultes") {
     if (/bepc/i.test(title)) return "BEPC";
@@ -606,7 +605,8 @@ function ensureAcademicCatalog(nextState) {
   if (!nextState.ui.schoolLevel) nextState.ui.schoolLevel = "all";
   nextState.courses = (nextState.courses || []).map((course) => ({
     ...course,
-    level: inferCourseLevel(course),
+    level: normalizeCategory(course.category) === "ib dp" ? "DP" : inferCourseLevel(course),
+    audience: normalizeCategory(course.category) === "ib dp" ? "IB DP" : course.audience,
     competencies: normalizeCompetencies(course.competencies, course),
     proAudience: (course.catalogType || (course.category === "Formation Pro" ? "pro" : "school")) === "pro" ? inferProAudience(course) : course.proAudience,
     proCategory: (course.catalogType || (course.category === "Formation Pro" ? "pro" : "school")) === "pro" ? inferProCategory(course) : course.proCategory
