@@ -242,6 +242,50 @@ a { color: inherit; }
 .module-card.active { border-color: rgba(23,71,166,0.3); background: rgba(23,71,166,0.04); }
 .resource-grid { margin-top: 16px; }
 .resource-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-radius: 16px; border: 1px solid var(--line); background: white; }
+.lesson-embed-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 18px;
+}
+.lesson-embed-card {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #fff;
+}
+.resource-preview {
+  margin-top: 18px;
+}
+.resource-preview.compact {
+  margin-top: 0;
+}
+.resource-preview iframe,
+.resource-preview video {
+  display: block;
+  width: 100%;
+  min-height: 62vh;
+  border: 1px solid rgba(37,82,187,.16);
+  border-radius: 18px;
+  background: #fff;
+}
+.resource-preview.compact iframe,
+.resource-preview.compact video {
+  aspect-ratio: 16 / 9;
+  min-height: 320px;
+}
+.resource-preview img {
+  display: block;
+  width: 100%;
+  max-height: 70vh;
+  object-fit: contain;
+  border: 1px solid rgba(37,82,187,.16);
+  border-radius: 18px;
+  background: #f8fbff;
+}
+.resource-preview audio {
+  width: 100%;
+}
 .layout-split { display: grid; grid-template-columns: minmax(0, 1fr) 340px; gap: 22px; }
 .form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .field { display: flex; flex-direction: column; gap: 6px; }
@@ -564,5 +608,11 @@ th { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-
   }
   .attendance-option select {
     max-width: none;
+  }
+  .resource-preview iframe,
+  .resource-preview video,
+  .resource-preview.compact iframe,
+  .resource-preview.compact video {
+    min-height: 240px;
   }
 }

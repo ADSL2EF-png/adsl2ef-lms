@@ -31,11 +31,39 @@ function normalizeImageUrl(value) {
   const text = String(value || "").trim();
   if (!text) return "";
   const driveId = extractGoogleDriveFileId(text);
-  if (driveId) return `https://drive.google.com/thumbnail?id=${encodeURIComponent(driveId)}&sz=w1600`;
+  if (driveId) return `https://lh3.googleusercontent.com/d/${encodeURIComponent(driveId)}=w1600`;
   return text;
 }
 function courseImageUrl(course) {
   return normalizeImageUrl(course?.image) || "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80";
+}
+function getYouTubeEmbedUrl(value) {
+  const text = String(value || "").trim();
+  const id = text.match(/[?&]v=([^&]+)/)?.[1]
+    || text.match(/youtu\.be\/([^?&]+)/)?.[1]
+    || text.match(/youtube\.com\/embed\/([^?&/]+)/)?.[1]
+    || "";
+  return id ? `https://www.youtube.com/embed/${encodeURIComponent(id)}` : "";
+}
+function getVimeoEmbedUrl(value) {
+  const text = String(value || "").trim();
+  const id = text.match(/vimeo\.com\/(?:video\/)?(\d+)/)?.[1] || "";
+  return id ? `https://player.vimeo.com/video/${encodeURIComponent(id)}` : "";
+}
+function getResourcePreviewUrl(value) {
+  const text = String(value || "").trim();
+  const driveId = extractGoogleDriveFileId(text);
+  if (driveId) return `https://drive.google.com/file/d/${encodeURIComponent(driveId)}/preview`;
+  return getYouTubeEmbedUrl(text) || getVimeoEmbedUrl(text) || text;
+}
+function isDirectVideoUrl(value) {
+  return /\.(mp4|webm|ogg)(\?|#|$)/i.test(String(value || ""));
+}
+function isDirectAudioUrl(value) {
+  return /\.(mp3|wav|ogg|m4a)(\?|#|$)/i.test(String(value || ""));
+}
+function isDirectPdfUrl(value) {
+  return /\.pdf(\?|#|$)/i.test(String(value || ""));
 }
 function initials(name) {
   return (name || "").split(" ").filter(Boolean).slice(0, 2).map((part) => part[0]?.toUpperCase()).join("");
@@ -3026,6 +3054,45 @@ function renderResourceAction(courseId, moduleId, lessonId, resource) {
   return `<button class="btn-ghost" onclick="openLessonResource('${courseId}','${moduleId}','${lessonId}','${resource.id}')">Ouvrir</button>`;
 }
 
+function renderResourceEmbed(resource, compact = false) {
+  if (!resource?.url || resource.url === "#") return "";
+  const type = String(resource.type || "link").toLowerCase();
+  const safeTitle = escapeHtml(resource.title || "Ressource");
+  const safeUrl = escapeHtml(resource.url || "");
+  const previewUrl = getResourcePreviewUrl(resource.url);
+  const safePreviewUrl = escapeHtml(previewUrl);
+  const driveId = extractGoogleDriveFileId(resource.url);
+  const imageUrl = normalizeImageUrl(resource.url);
+  const wrapperClass = compact ? "resource-preview compact" : "resource-preview";
+  if (type === "image") {
+    return `<div class="${wrapperClass}"><img src="${escapeHtml(imageUrl)}" alt="${safeTitle}"><div class="toolbar" style="margin-top:12px"><a class="btn-ghost" href="${safeUrl}" target="_blank" rel="noreferrer">Ouvrir l'image</a></div></div>`;
+  }
+  if (type === "video") {
+    if (driveId || getYouTubeEmbedUrl(resource.url) || getVimeoEmbedUrl(resource.url)) {
+      return `<div class="${wrapperClass}"><iframe src="${safePreviewUrl}" title="${safeTitle}" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe><div class="toolbar" style="margin-top:12px"><a class="btn-ghost" href="${safeUrl}" target="_blank" rel="noreferrer">Ouvrir la vidéo</a></div></div>`;
+    }
+    if (isDirectVideoUrl(resource.url)) {
+      return `<div class="${wrapperClass}"><video controls><source src="${safeUrl}"></video><div class="toolbar" style="margin-top:12px"><a class="btn-ghost" href="${safeUrl}" target="_blank" rel="noreferrer">Ouvrir la vidéo</a></div></div>`;
+    }
+  }
+  if (type === "pdf" || type === "document") {
+    const src = driveId || isDirectPdfUrl(resource.url)
+      ? previewUrl
+      : `https://docs.google.com/gview?embedded=1&url=${encodeURIComponent(resource.url)}`;
+    return `<div class="${wrapperClass}"><iframe src="${escapeHtml(src)}" title="${safeTitle}" allowfullscreen></iframe><div class="toolbar" style="margin-top:12px"><a class="btn-ghost" href="${safeUrl}" target="_blank" rel="noreferrer">Ouvrir le document</a></div></div>`;
+  }
+  if (type === "audio" && (driveId || isDirectAudioUrl(resource.url))) {
+    if (driveId) {
+      return `<div class="${wrapperClass}"><iframe src="${safePreviewUrl}" title="${safeTitle}" allow="autoplay"></iframe><div class="toolbar" style="margin-top:12px"><a class="btn-ghost" href="${safeUrl}" target="_blank" rel="noreferrer">Ouvrir l'audio</a></div></div>`;
+    }
+    return `<div class="${wrapperClass}"><audio controls src="${safeUrl}"></audio><div class="toolbar" style="margin-top:12px"><a class="btn-ghost" href="${safeUrl}" target="_blank" rel="noreferrer">Ouvrir l'audio</a></div></div>`;
+  }
+  if (driveId) {
+    return `<div class="${wrapperClass}"><iframe src="${safePreviewUrl}" title="${safeTitle}" allow="autoplay; fullscreen" allowfullscreen></iframe><div class="toolbar" style="margin-top:12px"><a class="btn-ghost" href="${safeUrl}" target="_blank" rel="noreferrer">Ouvrir dans Drive</a></div></div>`;
+  }
+  return `<div class="announcement" style="margin-top:12px">Cette ressource est disponible par lien externe. <a href="${safeUrl}" target="_blank" rel="noreferrer">Ouvrir le contenu</a></div>`;
+}
+
 function renderStudentCommunication(user) {
   const enrolledCourseIds = state.courses
     .filter((course) => course.enrolledUserIds.includes(user.id))
@@ -4407,6 +4474,22 @@ function renderCourseWorkspace(user) {
                 </div>
               </div>
               <p class="section-subtitle">${escapeHtml(lesson.content)}</p>
+              ${lesson.resources.length ? `
+                <div class="lesson-embed-list">
+                  ${lesson.resources.map((resource) => `
+                    <article class="lesson-embed-card">
+                      <div class="toolbar" style="justify-content:space-between;margin-bottom:12px">
+                        <div>
+                          <strong>${escapeHtml(resource.title)}</strong>
+                          <div class="tiny">${escapeHtml(resource.type)}</div>
+                        </div>
+                        <a class="btn-ghost" href="${escapeHtml(resource.url || "#")}" target="_blank" rel="noreferrer">Nouvel onglet</a>
+                      </div>
+                      ${renderResourceEmbed(resource, true)}
+                    </article>
+                  `).join("")}
+                </div>
+              ` : ""}
               <div class="resource-grid">
                 ${lesson.resources.map((resource) => `<div class="resource-item"><div><strong>${escapeHtml(resource.title)}</strong><div class="tiny">${escapeHtml(resource.type)}</div></div>${renderResourceAction(course.id, module.id, lesson.id, resource)}</div>`).join("")}
               </div>
@@ -4616,20 +4699,9 @@ function openLessonResource(courseId, moduleId, lessonId, resourceId) {
     `);
     return;
   }
-  const safeUrl = escapeHtml(resource.url || "");
   const safeTitle = escapeHtml(resource.title || "Ressource");
   const safeType = escapeHtml(resource.type || "resource");
-  const fallback = `<div class="panel" style="margin-top:18px"><h3>${safeTitle}</h3><p class="section-subtitle">${escapeHtml(lesson.content || "Consultez cette ressource dans votre progression de cours.")}</p>${resource.url ? `<div class="toolbar" style="margin-top:18px"><a class="btn-primary" href="${safeUrl}" target="_blank" rel="noreferrer">Ouvrir dans un nouvel onglet</a></div>` : `<div class="empty-state" style="margin-top:18px">Aucun lien externe n'est encore renseigné pour cette ressource.</div>`}</div>`;
-  let body = fallback;
-  if (resource.url && resource.url !== "#") {
-    if (resource.type === "video") {
-      body = `<div class="panel"><h3>${safeTitle}</h3><div class="tiny" style="margin:8px 0 18px 0">${safeType}</div><video controls style="width:100%;border-radius:18px;background:#0f172a"><source src="${safeUrl}"></video><div class="toolbar" style="margin-top:18px"><a class="btn-ghost" href="${safeUrl}" target="_blank" rel="noreferrer">Ouvrir le fichier vidéo</a></div></div>`;
-    } else if (resource.type === "pdf") {
-      body = `<div class="panel"><h3>${safeTitle}</h3><div class="tiny" style="margin:8px 0 18px 0">${safeType}</div><iframe src="${safeUrl}" title="${safeTitle}" style="width:100%;min-height:70vh;border:1px solid rgba(37,82,187,.16);border-radius:18px;background:#fff"></iframe><div class="toolbar" style="margin-top:18px"><a class="btn-ghost" href="${safeUrl}" target="_blank" rel="noreferrer">Télécharger / ouvrir le PDF</a></div></div>`;
-    } else {
-      body = `<div class="panel"><h3>${safeTitle}</h3><p class="section-subtitle">${escapeHtml(lesson.content || "Accédez au support lié à cette leçon.")}</p><div class="toolbar" style="margin-top:18px"><a class="btn-primary" href="${safeUrl}" target="_blank" rel="noreferrer">Ouvrir le contenu</a></div></div>`;
-    }
-  }
+  const body = `<div class="panel"><h3>${safeTitle}</h3><div class="tiny" style="margin:8px 0 18px 0">${safeType}</div><p class="section-subtitle">${escapeHtml(lesson.content || "Consultez cette ressource dans votre progression de cours.")}</p>${renderResourceEmbed(resource)}</div>`;
   openModal(body);
 }
 
@@ -5536,7 +5608,7 @@ function openLessonBuilder(courseId, moduleId) {
             <option value="audio">🎵 Audio</option>
             <option value="image">🖼️ Image</option>
           </select></div>
-          <div class="field full"><label for="lesson-resource-url">URL de la ressource</label><input id="lesson-resource-url" name="resourceUrl" placeholder="https://..."></div>
+          <div class="field full"><label for="lesson-resource-url">URL de la ressource</label><input id="lesson-resource-url" name="resourceUrl" placeholder="Lien Drive, YouTube, PDF, image ou vidéo"><span class="tiny">Pour Drive : partagez le fichier en "Toute personne disposant du lien peut consulter", puis collez le lien ici.</span></div>
         </div>
       </div>
       <div class="field full"><button class="btn-primary" type="submit">Créer la leçon</button></div>
@@ -5576,7 +5648,7 @@ function openLessonEditor(courseId, moduleId, lessonId) {
             <option value="audio" ${res?.type === "audio" ? "selected" : ""}>🎵 Audio</option>
             <option value="image" ${res?.type === "image" ? "selected" : ""}>🖼️ Image</option>
           </select></div>
-          <div class="field full"><label for="edit-lesson-resource-url">URL</label><input id="edit-lesson-resource-url" name="resourceUrl" value="${escapeHtml(res?.url || "")}"></div>
+          <div class="field full"><label for="edit-lesson-resource-url">URL</label><input id="edit-lesson-resource-url" name="resourceUrl" value="${escapeHtml(res?.url || "")}" placeholder="Lien Drive, YouTube, PDF, image ou vidéo"><span class="tiny">Pour Drive : partagez le fichier en "Toute personne disposant du lien peut consulter", puis collez le lien ici.</span></div>
         </div>
       </div>
       <div class="field full"><button class="btn-primary" type="submit">Enregistrer</button></div>
