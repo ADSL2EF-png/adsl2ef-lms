@@ -353,8 +353,9 @@ async function serveStatic(request, response) {
         "script-src 'self' https://cdn.jsdelivr.net 'unsafe-inline'; " +
         "style-src 'self' https://fonts.googleapis.com 'unsafe-inline'; " +
         "font-src 'self' https://fonts.gstatic.com; " +
-        "img-src 'self' https://images.unsplash.com data: blob:; " +
+        "img-src 'self' https://images.unsplash.com https://drive.google.com https://lh3.googleusercontent.com https://*.googleusercontent.com data: blob:; " +
         "connect-src 'self' https://*.supabase.co wss://*.supabase.co https://adsl2ef-lms-production.up.railway.app https://cdn.jsdelivr.net; " +
+        "frame-src 'self' https://drive.google.com https://docs.google.com https://www.youtube.com https://www.youtube-nocookie.com https://player.vimeo.com; " +
         "frame-ancestors 'none';";
     }
 
