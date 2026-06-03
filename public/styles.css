@@ -366,6 +366,7 @@ th { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-
 }
 .price-block span { color: var(--muted); font-size: .9rem; }
 .quick-school { background: linear-gradient(180deg, #f8fbff 0%, #eaf2ff 100%); }
+.quick-literacy { background: linear-gradient(180deg, #f4fffb 0%, #e0f7ef 100%); }
 .quick-pro { background: linear-gradient(180deg, #fffaf0 0%, #fff1d5 100%); }
 .certificate-card {
   padding: 10px 4px;

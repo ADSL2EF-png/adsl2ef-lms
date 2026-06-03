@@ -2779,7 +2779,7 @@ function renderContactPage() {
           <div class="field full"><label for="contact-name">Votre nom</label><input id="contact-name" name="name" required placeholder="Prénom Nom"></div>
           <div class="field"><label for="contact-phone">Téléphone / WhatsApp</label><input id="contact-phone" name="phone" required placeholder="${escapeHtml(site.contactPhone)}"></div>
           <div class="field"><label for="contact-email">Email</label><input id="contact-email" name="email" type="email" placeholder="contact@email.com"></div>
-          <div class="field full"><label for="contact-subject">Sujet</label><select id="contact-subject" name="subject"><option>Demande d'information</option><option>Inscription École Numérique</option><option>Inscription Formation Pro</option><option>Partenariat</option></select></div>
+          <div class="field full"><label for="contact-subject">Sujet</label><select id="contact-subject" name="subject"><option>Demande d'information</option><option>Inscription École Numérique</option><option>Alphabétisation & cours de langues</option><option>Inscription Formation Pro</option><option>Partenariat</option></select></div>
           <div class="field full"><label for="contact-message">Votre message</label><textarea id="contact-message" name="message" required placeholder="Décrivez votre demande, vos besoins ou vos questions..."></textarea></div>
           <div class="field full"><button class="btn-accent" type="submit">Envoyer le message</button></div>
         </form>
@@ -2827,6 +2827,7 @@ function renderLanding() {
           <div class="module-card"><strong>Collège</strong><div class="meta">Parcours de renforcement et d'accompagnement préparés pour les classes du collège.</div></div>
           <div class="module-card"><strong>Lycée moderne et technique</strong><div class="meta">Cours organisés par filière avec supports, évaluations et préparation aux examens.</div></div>
           <div class="module-card"><strong>École pour adultes</strong><div class="meta">Préparation des candidats libres au BAC et au BEPC dans un cadre flexible et motivant.</div></div>
+          <div class="module-card"><strong>Alphabétisation & langues</strong><div class="meta">Parcours pour apprendre à lire, écrire, communiquer et renforcer le français, l'anglais ou les langues utiles au quotidien.</div></div>
           <div class="module-card"><strong>Formation professionnelle</strong><div class="meta">Programmes classés par public cible et CAT pour enseignants, directeurs et responsables d'établissement.</div></div>
         </div>
       </div>
@@ -2845,6 +2846,12 @@ function renderLanding() {
           <h3>Collège, lycée moderne, technique et école pour adultes</h3>
           <p class="meta">Une vitrine claire des offres scolaires avec catégories, prix, promesses pédagogiques et accès aux parcours.</p>
           <button class="btn-primary" onclick="setScreen('schoolCatalog')">Ouvrir la page</button>
+        </article>
+        <article class="quick-card quick-literacy">
+          <p class="eyebrow">Alphabétisation & Langues</p>
+          <h3>Lecture, écriture, français pratique et langues de communication</h3>
+          <p class="meta">Des parcours accessibles pour adultes, jeunes et apprenants souhaitant renforcer les bases, mieux communiquer et progresser dans la vie quotidienne ou professionnelle.</p>
+          <button class="btn-primary" onclick="setScreen('contact')">Demander une orientation</button>
         </article>
         <article class="quick-card quick-pro">
           <p class="eyebrow">Formation Pro</p>
