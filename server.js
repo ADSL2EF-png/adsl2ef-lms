@@ -1746,6 +1746,22 @@ async function applyEventToState(state, eventType, payload) {
     case "course.restored":
       if (payload.course) replaceOrInsert(state.courses, payload.course);
       return { course: payload.course };
+    case "course.release.updated": {
+      const course = state.courses.find((item) => item.id === payload.courseId);
+      if (!course) return {};
+      const currentRelease = course.release && typeof course.release === "object" ? course.release : {};
+      course.release = {
+        modules: {
+          ...(currentRelease.modules && typeof currentRelease.modules === "object" ? currentRelease.modules : {}),
+          ...(payload.release?.modules && typeof payload.release.modules === "object" ? payload.release.modules : {})
+        },
+        lessons: {
+          ...(currentRelease.lessons && typeof currentRelease.lessons === "object" ? currentRelease.lessons : {}),
+          ...(payload.release?.lessons && typeof payload.release.lessons === "object" ? payload.release.lessons : {})
+        }
+      };
+      return { course };
+    }
     case "course.deleted": {
       const courseId = payload.courseId || payload.course?.id;
       if (!courseId) return {};

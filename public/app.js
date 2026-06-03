@@ -2345,10 +2345,7 @@ function getModuleCompletionMetrics(course, moduleId, userId) {
 function isModuleLocked(course, user, moduleId) {
   if (!course || !user || user.role !== "student") return false;
   const release = normalizeCourseReleaseState(course.release);
-  if (release.modules[moduleId] === false) return true;
-  const moduleIndex = course.modules.findIndex((item) => item.id === moduleId);
-  if (moduleIndex <= 0) return false;
-  return course.modules.slice(0, moduleIndex).some((module) => getModuleCompletionMetrics(course, module.id, user.id).progress < 100);
+  return release.modules[moduleId] === false;
 }
 function getFirstAccessibleModule(course, user) {
   if (!course?.modules?.length) return null;
@@ -4420,6 +4417,29 @@ function renderQuizArea(activity, submission) {
   `;
 }
 
+function renderActivityResource(activity) {
+  if (!activity?.resourceUrl) return "";
+  const resource = {
+    id: `${activity.id}-resource`,
+    title: activity.resourceTitle || "Sujet du devoir",
+    type: activity.resourceType || "document",
+    url: activity.resourceUrl
+  };
+  return `
+    <section class="panel" style="margin-top:18px">
+      <div class="toolbar" style="justify-content:space-between;margin-bottom:12px">
+        <div>
+          <p class="eyebrow">Sujet / support</p>
+          <h3>${escapeHtml(resource.title)}</h3>
+          <div class="tiny">${escapeHtml(resource.type)}</div>
+        </div>
+        <a class="btn-ghost" href="${escapeHtml(resource.url)}" target="_blank" rel="noreferrer">Ouvrir</a>
+      </div>
+      ${renderResourceEmbed(resource, true)}
+    </section>
+  `;
+}
+
 function renderAssignmentArea(activity, submission) {
   if (submission) {
     return `
@@ -4442,8 +4462,8 @@ function renderAssignmentArea(activity, submission) {
         <textarea id="assignment-text" name="text" placeholder="Expliquez votre démarche, ajoutez votre lien Drive ou résumez votre travail." required></textarea>
       </div>
       <div class="field full">
-        <label for="assignment-file">Nom du fichier / lien du devoir</label>
-        <input id="assignment-file" name="fileName" placeholder="ex: devoir-probabilites.pdf ou lien Drive">
+        <label for="assignment-file">Votre fichier ou lien de devoir rendu</label>
+        <input id="assignment-file" name="fileName" placeholder="Collez votre lien Drive de réponse ou le nom du fichier">
       </div>
       <div class="field full">
         <label for="assignment-upload">Déposer un fichier</label>
@@ -4650,6 +4670,7 @@ function renderActivityWorkspace(user) {
           <h2 class="section-title">${escapeHtml(activity.title)}</h2>
           <p class="section-subtitle">${escapeHtml(activity.description)}</p>
           <div class="announcement" style="margin-top:18px">Échéance : ${formatDate(activity.dueDate)} · Cours : ${escapeHtml(course?.title || "")}</div>
+          ${activity.type === "assignment" ? renderActivityResource(activity) : ""}
           ${activity.type === "quiz" ? renderQuizArea(activity, submission) : renderAssignmentArea(activity, submission)}
         </div>
         <aside class="sidebar">
@@ -5247,6 +5268,9 @@ function openActivityBuilder(courseId) {
       <div class="field"><label for="activity-max-points">Barème devoir</label><input id="activity-max-points" name="maxPoints" type="number" min="1" value="20"></div>
       <div class="field"><label for="activity-weight">Poids dans la note</label><input id="activity-weight" name="weight" type="number" min="1" value="1"></div>
       <div class="field full"><label for="activity-description">Description</label><textarea id="activity-description" name="description" required></textarea></div>
+      <div class="field full"><label for="activity-resource-url">Lien du sujet / support du devoir</label><input id="activity-resource-url" name="resourceUrl" placeholder="Lien Drive, PDF, vidéo ou page de consignes"><span class="tiny">Pour Drive : partagez le fichier en "Toute personne disposant du lien peut consulter", puis collez le lien ici.</span></div>
+      <div class="field"><label for="activity-resource-title">Titre du support</label><input id="activity-resource-title" name="resourceTitle" placeholder="Ex: Sujet du devoir"></div>
+      <div class="field"><label for="activity-resource-type">Type de support</label><select id="activity-resource-type" name="resourceType"><option value="document">Document</option><option value="pdf">PDF</option><option value="video">Vidéo</option><option value="image">Image</option><option value="link">Lien</option></select></div>
       <div class="field full"><button class="btn-primary" type="submit">Créer l'activité</button></div>
     </form>
   `);
@@ -5343,6 +5367,9 @@ function openActivityEditor(activityId) {
       <div class="field"><label for="edit-activity-max-points">Barème devoir</label><input id="edit-activity-max-points" name="maxPoints" type="number" min="1" value="${activity.maxPoints || 20}"></div>
       <div class="field"><label for="edit-activity-weight">Poids dans la note</label><input id="edit-activity-weight" name="weight" type="number" min="1" value="${activity.weight || 1}"></div>
       <div class="field full"><label for="edit-activity-description">Description</label><textarea id="edit-activity-description" name="description" required>${escapeHtml(activity.description)}</textarea></div>
+      <div class="field full"><label for="edit-activity-resource-url">Lien du sujet / support du devoir</label><input id="edit-activity-resource-url" name="resourceUrl" value="${escapeHtml(activity.resourceUrl || "")}" placeholder="Lien Drive, PDF, vidéo ou page de consignes"><span class="tiny">Pour Drive : partagez le fichier en "Toute personne disposant du lien peut consulter", puis collez le lien ici.</span></div>
+      <div class="field"><label for="edit-activity-resource-title">Titre du support</label><input id="edit-activity-resource-title" name="resourceTitle" value="${escapeHtml(activity.resourceTitle || "")}" placeholder="Ex: Sujet du devoir"></div>
+      <div class="field"><label for="edit-activity-resource-type">Type de support</label><select id="edit-activity-resource-type" name="resourceType"><option value="document" ${(activity.resourceType || "document") === "document" ? "selected" : ""}>Document</option><option value="pdf" ${activity.resourceType === "pdf" ? "selected" : ""}>PDF</option><option value="video" ${activity.resourceType === "video" ? "selected" : ""}>Vidéo</option><option value="image" ${activity.resourceType === "image" ? "selected" : ""}>Image</option><option value="link" ${activity.resourceType === "link" ? "selected" : ""}>Lien</option></select></div>
       <div class="field full"><button class="btn-primary" type="submit">Enregistrer les modifications</button></div>
     </form>
   `);
@@ -5736,7 +5763,7 @@ function openReviewModal(submissionId) {
         const question = activity.questions?.find((item) => item.id === answer.questionId);
         return `<div class="module-card" style="margin-bottom:10px"><strong>${escapeHtml(question?.prompt || "Question")}</strong><div class="meta" style="margin-top:8px">${escapeHtml(answer.value)}</div></div>`;
       }).join("")
-    : `${escapeHtml(submission.text || "Quiz auto-corrige")}${submission.fileName ? `<div class="announcement" style="margin-top:12px">Pièce jointe simulée : ${escapeHtml(submission.fileName)}</div>` : ""}`;
+    : `${escapeHtml(submission.text || "Quiz auto-corrige")}${submission.fileName ? `<div class="announcement" style="margin-top:12px">${submission.fileUrl ? `Devoir déposé : <a href="${escapeHtml(submission.fileUrl)}" target="_blank" rel="noreferrer">${escapeHtml(submission.fileName)}</a>` : `Pièce jointe déposée : ${escapeHtml(submission.fileName)}`}</div>` : ""}`;
   openModal(`
     <h2>Corriger la soumission</h2>
     <p class="section-subtitle">${escapeHtml(learner?.name || "")} · ${escapeHtml(activity.title)}</p>
@@ -6415,6 +6442,9 @@ async function handleActivityCreate(event) {
     title: String(formData.get("title")).trim(),
     type: String(formData.get("type")),
     description: String(formData.get("description")).trim(),
+    resourceTitle: String(formData.get("resourceTitle") || "").trim(),
+    resourceUrl: String(formData.get("resourceUrl") || "").trim(),
+    resourceType: String(formData.get("resourceType") || "document").trim(),
     dueDate: new Date(String(formData.get("dueDate"))).toISOString(),
     createdBy: getCurrentUser().id,
     weight: Number(formData.get("weight")) || 1
@@ -6467,6 +6497,9 @@ async function handleActivityEdit(event) {
   activity.type = String(formData.get("type")).trim();
   activity.moduleId = String(formData.get("moduleId")).trim();
   activity.description = String(formData.get("description")).trim();
+  activity.resourceTitle = String(formData.get("resourceTitle") || "").trim();
+  activity.resourceUrl = String(formData.get("resourceUrl") || "").trim();
+  activity.resourceType = String(formData.get("resourceType") || "document").trim();
   activity.dueDate = new Date(String(formData.get("dueDate"))).toISOString();
   activity.weight = Number(formData.get("weight")) || 1;
   if (activity.type === "quiz") {
@@ -6725,9 +6758,12 @@ async function handleModuleCreate(event) {
     lessons: []
   };
   course.modules.push(module);
+  course.release = normalizeCourseReleaseState(course.release);
+  course.release.modules[module.id] = true;
   if (shouldUseSupabasePersistence()) {
     try {
       await supabaseUpsert("course_modules", mapModuleToSupabaseRow(course.id, module, course.modules.length - 1));
+      await supabaseUpsert("courses", mapCourseToSupabaseRow(course));
     } catch (error) {
       console.warn("Supabase module create sync ignored:", error);
     }
@@ -6735,6 +6771,13 @@ async function handleModuleCreate(event) {
   addLog(getCurrentUser().id, `Module ajouté - ${course.title}`);
   const remote = await publishPlatformEvent("module.created", { courseId: course.id, module });
   mergeRemoteEntity(module, extractRemoteEntity(remote, "module"));
+  await publishPlatformEvent("course.release.updated", {
+    courseId: course.id,
+    moduleId: module.id,
+    release: course.release,
+    entity: "module",
+    isOpen: true
+  });
   closeModal();
   openCourse(course.id);
 }
@@ -6779,8 +6822,12 @@ async function handleLessonCreate(event) {
     resources: resourceTitle && resourceUrl ? [{ id: crypto.randomUUID(), title: resourceTitle, type: resourceType, url: resourceUrl }] : []
   };
   module.lessons.push(lesson);
+  course.release = normalizeCourseReleaseState(course.release);
+  course.release.modules[module.id] = true;
+  course.release.lessons[lesson.id] = true;
   if (shouldUseSupabasePersistence()) {
     try {
+      await supabaseUpsert("courses", mapCourseToSupabaseRow(course));
       await supabaseUpsert("lessons", mapLessonToSupabaseRow(module.id, lesson, module.lessons.length - 1));
       if (lesson.resources.length) await supabaseUpsert("lesson_resources", mapLessonResourcesToSupabaseRows(lesson));
     } catch (error) {
@@ -6790,6 +6837,14 @@ async function handleLessonCreate(event) {
   addLog(getCurrentUser().id, `Leçon ajoutée - ${course.title}`);
   const remote = await publishPlatformEvent("lesson.created", { courseId: course.id, moduleId: module.id, lesson });
   mergeRemoteEntity(lesson, extractRemoteEntity(remote, "lesson"));
+  await publishPlatformEvent("course.release.updated", {
+    courseId: course.id,
+    moduleId: module.id,
+    lessonId: lesson.id,
+    release: course.release,
+    entity: "lesson",
+    isOpen: true
+  });
   closeModal();
   setScreen("course", {
     activeCourseId: course.id,
