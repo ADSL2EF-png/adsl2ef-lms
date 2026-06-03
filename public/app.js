@@ -2718,8 +2718,8 @@ function renderCatalogPage(type) {
         </div>
       </div>
       <div class="storefront-aside">
-        <div class="stat-pill"><strong>${total}</strong><span>${isSchool ? "parcours disponibles" : "formations à vendre"}</span></div>
-        <div class="stat-pill"><strong>${isSchool ? "15 000 F" : "45 000 F"}</strong><span>à partir de</span></div>
+        <div class="stat-pill"><strong>${total}</strong><span>${isSchool ? "parcours disponibles" : "programmes structurés"}</span></div>
+        ${isSchool ? `<div class="stat-pill"><strong>15 000 F</strong><span>à partir de</span></div>` : `<div class="stat-pill"><strong>CAT 1 à CAT 5</strong><span>parcours classés</span></div>`}
         <div class="stat-pill"><strong>${isSchool ? "Quiz + devoirs + suivi" : "Cas pratiques + certificat"}</strong><span>${isSchool ? "format LMS complet" : "expérience professionnalisante"}</span></div>
       </div>
     </section>
