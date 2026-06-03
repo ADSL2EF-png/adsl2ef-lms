@@ -137,6 +137,15 @@ function uniqueNonEmpty(values) {
   return [...new Set(values.map((value) => String(value || "").trim()).filter(Boolean))];
 }
 
+function initials(name) {
+  return String(name || "")
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase() || "")
+    .join("") || "AA";
+}
+
 async function deleteSupabaseProfileRows({ userId, email }) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_KEY) return false;
   const ids = uniqueNonEmpty([userId]);
@@ -705,7 +714,7 @@ async function loadProfileByAuthUserId(authUserId) {
   }
 }
 
-async function upsertSupabaseProfile({ authUserId, email, name, role, avatar, approvalStatus }) {
+async function upsertSupabaseProfile({ authUserId, email, name, role, bio = "", avatar, approvalStatus }) {
   const createdAt = new Date().toISOString();
   try {
     await postProfileWithColumnFallback("/profiles?on_conflict=auth_user_id", {
@@ -713,7 +722,7 @@ async function upsertSupabaseProfile({ authUserId, email, name, role, avatar, ap
       full_name: name,
       email,
       role,
-      bio: "",
+      bio,
       avatar,
       approval_status: approvalStatus,
       created_at: createdAt,
@@ -726,7 +735,7 @@ async function upsertSupabaseProfile({ authUserId, email, name, role, avatar, ap
       name,
       email,
       role,
-      bio: "",
+      bio,
       avatar,
       approval_status: approvalStatus,
       created_at: createdAt,
@@ -1806,6 +1815,24 @@ async function applyEventToState(state, eventType, payload) {
           passwordHash: payload.user.passwordHash || createPasswordHash(payload.user.password || "ChangeMe123!")
         };
         delete merged.password;
+        if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
+          const existingAuthUser = merged.email ? await findSupabaseAuthUserByEmail(String(merged.email).toLowerCase()) : null;
+          const authUserId = existingAuthUser?.id || merged.id;
+          await updateSupabaseAuthUser(authUserId, {
+            email: merged.email,
+            name: merged.name,
+            role: merged.role
+          }).catch((error) => console.warn("[Supabase] auth profile update ignored:", error.message));
+          await upsertSupabaseProfile({
+            authUserId,
+            email: merged.email,
+            name: merged.name,
+            role: merged.role,
+            bio: merged.bio || "",
+            avatar: merged.avatar || initials(merged.name),
+            approvalStatus: merged.approvalStatus || "approved"
+          }).catch((error) => console.warn("[Supabase] profile update ignored:", error.message));
+        }
         replaceOrInsert(state.users, merged);
         return { user: sanitizeUser(merged) };
       }

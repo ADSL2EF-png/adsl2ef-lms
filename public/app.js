@@ -1300,7 +1300,11 @@ function mapActivityToSupabaseRow(activity) {
 }
 
 function buildSupabaseProfileRows() {
-  return state.users.map((user) => ({
+  return state.users.map(mapUserToSupabaseProfileRow);
+}
+
+function mapUserToSupabaseProfileRow(user) {
+  return {
     id: user.id,
     full_name: user.name,
     email: user.email,
@@ -1309,7 +1313,7 @@ function buildSupabaseProfileRows() {
     avatar: user.avatar || initials(user.name),
     created_at: user.createdAt || nowISO(),
     updated_at: nowISO()
-  }));
+  };
 }
 
 function buildSupabaseCourseRows() {
@@ -3509,6 +3513,9 @@ function renderDashboardHeader(user) {
         <h3>${escapeHtml(user.name)}</h3>
         <p class="section-subtitle">${escapeHtml(user.bio || "Profil sans biographie.")}</p>
         <div class="summary-grid" style="margin-top:18px">${renderUserMetrics(user)}</div>
+        <div class="toolbar" style="margin-top:18px">
+          <button class="btn-primary" onclick="openMyProfileEditor()">Modifier mon profil</button>
+        </div>
       </div>
     </section>
   `;
@@ -4853,6 +4860,9 @@ function openProfileModal() {
       <div class="module-card"><strong>Profil</strong><div class="meta">${roleLabels[user.role]}</div></div>
       <div class="module-card"><strong>Biographie</strong><div class="meta">${escapeHtml(user.bio || "Aucune biographie")}</div></div>
     </div>
+    <div class="toolbar" style="margin-top:18px">
+      <button class="btn-primary" onclick="openMyProfileEditor()">Modifier mon profil</button>
+    </div>
   `);
 }
 
@@ -4983,7 +4993,8 @@ function openCourseBuilder() {
       </select></div>
       <div class="field"><label for="course-level">Sous-catégorie / classe</label><select id="course-level" name="level">${renderCourseLevelOptions("")}</select></div>
       <div class="field"><label for="course-audience">Audience</label><input id="course-audience" name="audience" required placeholder="Terminale D, Enseignants..."></div>
-      <div class="field"><label for="course-duration">Durée</label><input id="course-duration" name="duration" required placeholder="8 semaines"></div>
+      <div class="field"><label for="course-duration">Durée</label><input id="course-duration" name="duration" list="course-duration-options" required placeholder="Ex: 8 semaines ou 3 mois"></div>
+      <datalist id="course-duration-options"><option value="4 semaines"></option><option value="8 semaines"></option><option value="12 semaines"></option><option value="3 mois"></option><option value="6 mois"></option><option value="9 mois"></option><option value="1 an"></option></datalist>
       <div class="field full"><label for="course-image">Image de couverture</label><input id="course-image" name="image" placeholder="https://..."></div>
       <div class="field full"><label for="course-description">Description</label><textarea id="course-description" name="description" required></textarea></div>
       <div class="field full"><label for="course-competencies">Compétences visées</label><textarea id="course-competencies" name="competencies" placeholder="Une compétence par ligne : comprendre, raisonner, appliquer, communiquer..."></textarea></div>
@@ -5045,6 +5056,22 @@ function openUserEditor(userId) {
   `);
 }
 
+function openMyProfileEditor() {
+  const user = getCurrentUser();
+  if (!user) return;
+  openModal(`
+    <h2>Modifier mon profil</h2>
+    <p class="section-subtitle">Mettez à jour les informations visibles dans votre espace et auprès de l'équipe pédagogique.</p>
+    <form id="profile-edit-form" class="form-grid" style="margin-top:18px">
+      <div class="field"><label for="profile-name">Nom complet</label><input id="profile-name" name="name" value="${escapeHtml(user.name)}" required></div>
+      <div class="field"><label for="profile-avatar">Initiales / avatar</label><input id="profile-avatar" name="avatar" value="${escapeHtml(user.avatar || initials(user.name))}" maxlength="4" placeholder="AA"></div>
+      <div class="field full"><label for="profile-email">Email</label><input id="profile-email" name="email" type="email" value="${escapeHtml(user.email)}" required></div>
+      <div class="field full"><label for="profile-bio">Biographie</label><textarea id="profile-bio" name="bio" placeholder="Présentez brièvement votre parcours, vos objectifs ou vos responsabilités.">${escapeHtml(user.bio || "")}</textarea></div>
+      <div class="field full"><button class="btn-primary" type="submit">Enregistrer mon profil</button></div>
+    </form>
+  `);
+}
+
 function openCourseEditor(courseId) {
   const course = getCourseById(courseId);
   const teachers = state.users.filter((user) => user.role === "teacher");
@@ -5059,7 +5086,8 @@ function openCourseEditor(courseId) {
       </select></div>
       <div class="field"><label for="edit-course-level">Sous-catégorie / classe</label><select id="edit-course-level" name="level">${renderCourseLevelOptions(course.level || "")}</select></div>
       <div class="field"><label for="edit-course-audience">Audience</label><input id="edit-course-audience" name="audience" value="${escapeHtml(course.audience || "")}" required></div>
-      <div class="field"><label for="edit-course-duration">Durée</label><input id="edit-course-duration" name="duration" value="${escapeHtml(course.duration || "")}" required></div>
+      <div class="field"><label for="edit-course-duration">Durée</label><input id="edit-course-duration" name="duration" list="edit-course-duration-options" value="${escapeHtml(course.duration || "")}" required placeholder="Ex: 8 semaines ou 3 mois"></div>
+      <datalist id="edit-course-duration-options"><option value="4 semaines"></option><option value="8 semaines"></option><option value="12 semaines"></option><option value="3 mois"></option><option value="6 mois"></option><option value="9 mois"></option><option value="1 an"></option></datalist>
       <div class="field full"><label for="edit-course-image">Image</label><input id="edit-course-image" name="image" value="${escapeHtml(course.image || "")}"></div>
       <div class="field full"><label for="edit-course-description">Description</label><textarea id="edit-course-description" name="description" required>${escapeHtml(course.description)}</textarea></div>
       <div class="field full"><label for="edit-course-competencies">Compétences visées</label><textarea id="edit-course-competencies" name="competencies" placeholder="Une compétence par ligne">${escapeHtml((course.competencies || []).join("\n"))}</textarea></div>
@@ -5741,6 +5769,7 @@ function bindForms() {
   document.getElementById("bulk-enrollment-form")?.addEventListener("submit", handleBulkEnrollmentAssign);
   document.getElementById("admin-user-form")?.addEventListener("submit", handleAdminUserCreate);
   document.getElementById("admin-user-edit-form")?.addEventListener("submit", handleAdminUserEdit);
+  document.getElementById("profile-edit-form")?.addEventListener("submit", handleProfileEdit);
 }
 
 async function handleCourseEnrollmentAssign(event) {
@@ -7155,6 +7184,34 @@ async function handleAdminUserEdit(event) {
   saveState();
 }
 
+async function handleProfileEdit(event) {
+  event.preventDefault();
+  const user = getCurrentUser();
+  if (!user) return;
+  const formData = new FormData(event.currentTarget);
+  const email = String(formData.get("email")).trim().toLowerCase();
+  if (state.users.some((item) => item.id !== user.id && item.email.toLowerCase() === email)) {
+    alert("Email déjà utilisé.");
+    return;
+  }
+  user.name = String(formData.get("name")).trim();
+  user.email = email;
+  user.bio = String(formData.get("bio")).trim();
+  user.avatar = String(formData.get("avatar")).trim().slice(0, 4).toUpperCase() || initials(user.name);
+  if (shouldUseSupabasePersistence()) {
+    try {
+      await supabaseUpsert("profiles", mapUserToSupabaseProfileRow(user));
+    } catch (error) {
+      console.warn("Supabase profile update ignored:", error);
+    }
+  }
+  const remote = await publishPlatformEvent("user.updated", { user });
+  mergeRemoteEntity(user, extractRemoteEntity(remote, "user"));
+  closeModal();
+  saveState();
+  renderApp();
+}
+
 async function initializeApp() {
   renderApp();
   const persistence = getPersistenceConfig();
@@ -7208,6 +7265,7 @@ window.toggleLessonRelease = toggleLessonRelease;
 window.focusFirstStudentCourse = focusFirstStudentCourse;
 window.openEnrollmentModal = openEnrollmentModal;
 window.openProfileModal = openProfileModal;
+window.openMyProfileEditor = openMyProfileEditor;
 window.openPlatformSettings = openPlatformSettings;
 window.openUserBuilder = openUserBuilder;
 window.openUserEditor = openUserEditor;
