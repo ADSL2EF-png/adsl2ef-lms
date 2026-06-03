@@ -3661,6 +3661,68 @@ function renderActivitySummaryCard(activity) {
   `;
 }
 
+function renderCourseMainMenu(course, user, activeModule, activeLesson, activities, completionMetrics, moduleMetrics) {
+  const release = normalizeCourseReleaseState(course.release);
+  const isStudent = user.role === "student";
+  return `
+    <section class="course-main-menu" aria-label="Menu principal du cours">
+      <div class="toolbar course-menu-head">
+        <div>
+          <p class="eyebrow">Menu du cours</p>
+          <h3>${escapeHtml(activeModule?.title || "Parcours")}</h3>
+        </div>
+        <div class="badge-row">
+          ${isStudent && completionMetrics ? `<span class="badge primary">${completionMetrics.progress}% progression</span>` : ""}
+          ${isStudent && moduleMetrics ? `<span class="badge success">${moduleMetrics.completedItems}/${moduleMetrics.totalItems} éléments</span>` : ""}
+          <span class="badge warning">${activities.length} activité(s)</span>
+        </div>
+      </div>
+      <div class="course-mobile-chipbar">
+        <a href="#course-lessons" class="chip">Leçons</a>
+        <a href="#course-activities-panel" class="chip">Devoirs / quiz</a>
+        <a href="#course-discussions" class="chip">Annonces</a>
+        <a href="#course-progress" class="chip">Progression</a>
+      </div>
+      <div class="course-menu-grid">
+        <div class="course-menu-section">
+          <div class="menu-section-title">Modules</div>
+          <div class="course-menu-list">
+            ${course.modules.map((item) => {
+              const locked = isModuleLocked(course, user, item.id);
+              const itemMetrics = isStudent ? getModuleCompletionMetrics(course, item.id, user.id) : null;
+              return `<button class="menu-card-btn ${activeModule?.id === item.id ? "active" : ""}" onclick="selectModule('${course.id}','${item.id}')" ${locked ? "disabled" : ""}>
+                <strong>${escapeHtml(item.title)}</strong>
+                <span>${locked ? "Fermé" : isStudent ? `${itemMetrics.completedItems}/${itemMetrics.totalItems} complété(s)` : release.modules[item.id] === false ? "Fermé aux élèves" : "Ouvert"}</span>
+              </button>`;
+            }).join("") || `<div class="empty-state">Aucun module.</div>`}
+          </div>
+        </div>
+        <div class="course-menu-section" id="course-lessons">
+          <div class="menu-section-title">Leçons</div>
+          <div class="course-menu-list">
+            ${(activeModule?.lessons || []).map((item) => {
+              const locked = activeModule ? isLessonLocked(course, user, activeModule.id, item.id) : false;
+              return `<button class="menu-card-btn ${activeLesson?.id === item.id ? "active" : ""}" onclick="selectLesson('${course.id}','${activeModule.id}','${item.id}')" ${locked ? "disabled" : ""}>
+                <strong>${escapeHtml(item.title)}</strong>
+                <span>${escapeHtml(item.duration || "")}${item.duration ? " · " : ""}${isStudent ? (locked ? "Fermée" : isLessonCompleted(user.id, course.id, activeModule.id, item.id) ? "Terminée" : "À faire") : release.lessons[item.id] === false ? "Fermée aux élèves" : "Accessible"}</span>
+              </button>`;
+            }).join("") || `<div class="empty-state">Pas encore de leçons.</div>`}
+          </div>
+        </div>
+        <div class="course-menu-section" id="course-activities">
+          <div class="menu-section-title">Devoirs et quiz</div>
+          <div class="course-menu-list">
+            ${activities.map((activity) => `<button class="menu-card-btn" onclick="openActivity('${activity.id}')">
+              <strong>${escapeHtml(activity.title)}</strong>
+              <span>${activity.type === "quiz" ? "Quiz" : "Devoir"} · ${formatDate(activity.dueDate)}</span>
+            </button>`).join("") || `<div class="empty-state">Aucun devoir ou quiz pour ce module.</div>`}
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 function renderSubmissionCard(submission) {
   const user = getUserById(submission.userId);
   const activity = getActivityById(submission.activityId);
@@ -4496,7 +4558,7 @@ function renderCourseWorkspace(user) {
   const lessonCompleted = user.role === "student" && lesson ? isLessonCompleted(user.id, course.id, module.id, lesson.id) : false;
   const moduleMetrics = user.role === "student" && module ? getModuleCompletionMetrics(course, module.id, user.id) : null;
   return `
-    <section class="panel" style="margin-bottom:18px">
+    <section class="panel course-workspace ${user.role === "student" ? "course-workspace-student" : "course-workspace-teacher"}" style="margin-bottom:18px">
       <div class="toolbar" style="justify-content:space-between">
         <button class="btn-ghost" onclick="setScreen('dashboard')">Retour au tableau de bord</button>
         <div class="badge-row">
@@ -4505,7 +4567,7 @@ function renderCourseWorkspace(user) {
           <span class="badge warning">${getActivitiesForCourse(course.id).length} activités</span>
         </div>
       </div>
-      <div class="layout-split" style="margin-top:18px">
+      <div class="layout-split course-workspace-grid" style="margin-top:18px">
         <div class="panel" style="padding:0;border:none;box-shadow:none;background:transparent">
           ${renderCourseCover(course, course.audience, { height: "220px" })}
           <h2 class="section-title">${escapeHtml(course.title)}</h2>
@@ -4531,6 +4593,7 @@ function renderCourseWorkspace(user) {
               </div>
             ` : ""}
           </div>
+          ${renderCourseMainMenu(course, user, module, lesson, activities, completionMetrics, moduleMetrics)}
           ${lesson ? `
             <section class="panel" style="margin-top:18px">
               <div class="toolbar" style="justify-content:space-between">
@@ -4567,13 +4630,13 @@ function renderCourseWorkspace(user) {
                 </div>
               ` : ""}
             </section>` : `<div class="empty-state" style="margin-top:18px">Ce cours ne contient pas encore de leçons.</div>`}
-          <section class="panel" style="margin-top:18px">
+          <section class="panel" id="course-activities-panel" style="margin-top:18px">
             <h3>Activités du module</h3>
             <div class="activity-grid" style="margin-top:18px">
               ${activities.length ? activities.map(renderActivitySummaryCard).join("") : `<div class="empty-state">Aucune activité sur ce module.</div>`}
             </div>
           </section>
-          <section class="dashboard-grid" style="margin-top:18px">
+          <section class="dashboard-grid" id="course-discussions" style="margin-top:18px">
             <div class="panel">
               <div class="toolbar" style="justify-content:space-between">
                 <h3>Annonces du cours</h3>
@@ -4592,7 +4655,7 @@ function renderCourseWorkspace(user) {
               <div class="feed-list" style="margin-top:18px">${renderCourseForums(course.id)}</div>
             </div>
           </section>
-          <section class="dashboard-grid" style="margin-top:18px">
+          <section class="dashboard-grid" id="course-progress" style="margin-top:18px">
             <div class="panel">
               <div class="toolbar" style="justify-content:space-between">
                 <h3>Assiduité</h3>
@@ -4610,7 +4673,7 @@ function renderCourseWorkspace(user) {
           </section>
           ${canTeachCourse(user, course) ? `<section class="panel" style="margin-top:18px"><h3>Rapport du cours</h3>${renderCourseReport(course)}</section>` : ""}
         </div>
-        <aside class="sidebar">
+        <aside class="sidebar course-sidebar">
           <section class="sidebar-card">
             <p class="eyebrow">Modules</p>
             <div class="module-list">
