@@ -252,6 +252,9 @@ const defaultState = {
   courses: [],
   activities: [],
   questionBank: [],
+  gameQuizzes: [],
+  gameSessions: [],
+  gameResults: [],
   paymentRecords: [],
   submissions: [],
   attendanceSessions: [],
@@ -551,6 +554,9 @@ async function loadState() {
       sbState.courses = ensureArray(sbState.courses);
       sbState.activities = ensureArray(sbState.activities);
       sbState.questionBank = ensureArray(sbState.questionBank);
+      sbState.gameQuizzes = ensureArray(sbState.gameQuizzes);
+      sbState.gameSessions = ensureArray(sbState.gameSessions);
+      sbState.gameResults = ensureArray(sbState.gameResults);
       sbState.paymentRecords = ensureArray(sbState.paymentRecords);
       sbState.submissions = ensureArray(sbState.submissions);
       sbState.attendanceSessions = ensureArray(sbState.attendanceSessions);
@@ -572,6 +578,9 @@ async function loadState() {
   parsed.courses = ensureArray(parsed.courses);
   parsed.activities = ensureArray(parsed.activities);
   parsed.questionBank = ensureArray(parsed.questionBank);
+  parsed.gameQuizzes = ensureArray(parsed.gameQuizzes);
+  parsed.gameSessions = ensureArray(parsed.gameSessions);
+  parsed.gameResults = ensureArray(parsed.gameResults);
   parsed.paymentRecords = ensureArray(parsed.paymentRecords);
   parsed.submissions = ensureArray(parsed.submissions);
   parsed.attendanceSessions = ensureArray(parsed.attendanceSessions);
@@ -1784,6 +1793,48 @@ async function applyEventToState(state, eventType, payload) {
     case "activity.updated":
       if (payload.activity) replaceOrInsert(state.activities, payload.activity);
       return { activity: payload.activity };
+    case "game.quiz.created":
+    case "game.quiz.updated":
+      state.gameQuizzes = ensureArray(state.gameQuizzes);
+      if (payload.quiz) replaceOrInsert(state.gameQuizzes, payload.quiz);
+      return { quiz: payload.quiz };
+    case "game.quiz.deleted":
+      state.gameQuizzes = ensureArray(state.gameQuizzes).filter((quiz) => quiz.id !== payload.quizId);
+      state.gameSessions = ensureArray(state.gameSessions).filter((session) => session.quizId !== payload.quizId);
+      state.gameResults = ensureArray(state.gameResults).filter((result) => result.quizId !== payload.quizId);
+      return { deleted: true, quizId: payload.quizId };
+    case "game.session.started":
+      state.gameSessions = ensureArray(state.gameSessions);
+      if (payload.session) replaceOrInsert(state.gameSessions, payload.session);
+      return { session: payload.session };
+    case "game.session.joined": {
+      const session = ensureArray(state.gameSessions).find((item) => item.id === payload.sessionId);
+      if (!session || !payload.participant) return {};
+      session.participants = ensureArray(session.participants);
+      {
+        const index = session.participants.findIndex((item) => item.userId === payload.participant.userId);
+        if (index >= 0) session.participants[index] = { ...session.participants[index], ...payload.participant };
+        else session.participants.push(payload.participant);
+      }
+      return { session };
+    }
+    case "game.answer.submitted": {
+      const session = ensureArray(state.gameSessions).find((item) => item.id === payload.sessionId);
+      if (!session || !payload.participant) return {};
+      session.participants = ensureArray(session.participants);
+      {
+        const index = session.participants.findIndex((item) => item.userId === payload.participant.userId);
+        if (index >= 0) session.participants[index] = { ...session.participants[index], ...payload.participant };
+        else session.participants.push(payload.participant);
+      }
+      return { session };
+    }
+    case "game.session.finished":
+      state.gameSessions = ensureArray(state.gameSessions);
+      if (payload.session) replaceOrInsert(state.gameSessions, payload.session);
+      state.gameResults = ensureArray(state.gameResults).filter((result) => result.sessionId !== payload.session?.id);
+      state.gameResults.push(...ensureArray(payload.results));
+      return { session: payload.session, results: payload.results };
     case "module.created":
     case "module.updated": {
       const course = state.courses.find((item) => item.id === payload.courseId);

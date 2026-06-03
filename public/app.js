@@ -161,6 +161,9 @@ const starterData = {
   courses: [],
   activities: [],
   questionBank: [],
+  gameQuizzes: [],
+  gameSessions: [],
+  gameResults: [],
   completionRecords: [],
   certificateRecords: [],
   paymentRecords: [],
@@ -181,6 +184,8 @@ const starterData = {
     screen: "landing",
     activeCourseId: null,
     activeActivityId: null,
+    activeGameSessionId: null,
+    activeGameQuizId: null,
     currentModuleId: null,
     currentLessonId: null,
     schoolCategory: "all",
@@ -750,6 +755,9 @@ function migrateState(parsed) {
   next.forumThreads = parsed.forumThreads || [];
   next.attendanceSessions = parsed.attendanceSessions || [];
   next.questionBank = parsed.questionBank || [];
+  next.gameQuizzes = parsed.gameQuizzes || [];
+  next.gameSessions = parsed.gameSessions || [];
+  next.gameResults = parsed.gameResults || [];
   next.completionRecords = parsed.completionRecords || [];
   next.certificateRecords = parsed.certificateRecords || [];
   next.paymentRecords = parsed.paymentRecords || [];
@@ -2480,10 +2488,16 @@ function goToDashboard() {
   state.ui.screen = "dashboard";
   state.ui.activeCourseId = null;
   state.ui.activeActivityId = null;
+  state.ui.activeGameSessionId = null;
+  state.ui.activeGameQuizId = null;
   state.ui.currentModuleId = null;
   state.ui.currentLessonId = null;
   saveState();
   window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function openReviensEnJeu() {
+  setScreen("game", { activeGameSessionId: null, activeGameQuizId: null });
 }
 
 function metricCard(label, value, trend) {
@@ -3661,6 +3675,233 @@ function renderActivitySummaryCard(activity) {
   `;
 }
 
+function getGameQuizById(quizId) {
+  return state.gameQuizzes.find((quiz) => quiz.id === quizId);
+}
+
+function getGameSessionById(sessionId) {
+  return state.gameSessions.find((session) => session.id === sessionId);
+}
+
+function getGameSessionByCode(code) {
+  return state.gameSessions.find((session) => String(session.code || "").toUpperCase() === String(code || "").trim().toUpperCase());
+}
+
+function canManageGameQuiz(user, quiz) {
+  return user?.role === "admin" || (user?.role === "teacher" && quiz?.createdBy === user.id);
+}
+
+function generateGameCode() {
+  let code = "";
+  do {
+    code = Math.random().toString(36).slice(2, 8).toUpperCase();
+  } while (getGameSessionByCode(code));
+  return code;
+}
+
+function getGameQuestionScore(question, answer) {
+  if (!question || !answer) return 0;
+  const correct = String(answer.value || "").trim() === String(question.answer || "").trim();
+  if (!correct) return 0;
+  const base = Number(question.points || 10);
+  const durationMs = Math.max(1, Number(question.durationSeconds || 30) * 1000);
+  const elapsed = Math.min(durationMs, Math.max(0, Number(answer.elapsedMs || durationMs)));
+  const speedBonus = Math.round(base * 0.5 * (1 - elapsed / durationMs));
+  return base + Math.max(0, speedBonus);
+}
+
+function computeGameParticipantScore(quiz, participant) {
+  return (participant.answers || []).reduce((sum, answer) => {
+    const question = quiz.questions.find((item) => item.id === answer.questionId);
+    return sum + getGameQuestionScore(question, answer);
+  }, 0);
+}
+
+function getGameRanking(session) {
+  const quiz = getGameQuizById(session?.quizId);
+  if (!quiz) return [];
+  return (session.participants || [])
+    .map((participant) => ({
+      ...participant,
+      score: computeGameParticipantScore(quiz, participant),
+      completed: (participant.answers || []).length >= quiz.questions.length
+    }))
+    .sort((a, b) => b.score - a.score || new Date(a.joinedAt) - new Date(b.joinedAt));
+}
+
+function renderGameQuizCard(quiz, user) {
+  const course = getCourseById(quiz.courseId);
+  const sessions = state.gameSessions.filter((session) => session.quizId === quiz.id);
+  return `
+    <article class="activity-card game-card">
+      <div class="toolbar" style="justify-content:space-between">
+        <span class="badge primary">Reviens en Jeu</span>
+        <span class="badge ${quiz.mode === "competition" ? "warning" : "success"}">${quiz.mode === "competition" ? "Compétition" : quiz.mode === "revision" ? "Révision" : "Entraînement"}</span>
+      </div>
+      <h3>${escapeHtml(quiz.title)}</h3>
+      <p class="meta">${escapeHtml(quiz.description || "Quiz interactif ADSL-2EF.")}</p>
+      <div class="tiny">${quiz.questions.length} question(s) · ${course ? escapeHtml(course.title) : "Quiz indépendant"}${quiz.className ? ` · ${escapeHtml(quiz.className)}` : ""}</div>
+      <div class="toolbar" style="justify-content:space-between;margin-top:14px">
+        <span class="tiny">${sessions.length} session(s)</span>
+        <div class="toolbar">
+          ${canManageGameQuiz(user, quiz) ? `<button class="btn-primary" onclick="startGameSession('${quiz.id}')">Lancer</button><button class="btn-ghost" onclick="openGameQuestionBuilder('${quiz.id}')">Questions</button><button class="btn-ghost" onclick="openGameQuizEditor('${quiz.id}')">Modifier</button><button class="btn-ghost" onclick="removeGameQuiz('${quiz.id}')">Supprimer</button>` : `<button class="btn-primary" onclick="startRevisionSession('${quiz.id}')">S'exercer</button>`}
+        </div>
+      </div>
+    </article>
+  `;
+}
+
+function renderGameSessionCard(session, user) {
+  const quiz = getGameQuizById(session.quizId);
+  const ranking = getGameRanking(session);
+  return `
+    <article class="module-card">
+      <div class="toolbar" style="justify-content:space-between">
+        <div>
+          <strong>${escapeHtml(quiz?.title || "Quiz")}</strong>
+          <div class="meta">Code : <strong>${escapeHtml(session.code)}</strong> · ${session.participants.length} participant(s)</div>
+        </div>
+        <span class="badge ${session.status === "finished" ? "success" : "warning"}">${session.status === "finished" ? "Terminé" : "Ouvert"}</span>
+      </div>
+      <div class="toolbar" style="margin-top:12px">
+        <button class="btn-ghost" onclick="openGameSession('${session.id}')">Voir</button>
+        ${canManageGameQuiz(user, quiz) && session.status !== "finished" ? `<button class="btn-primary" onclick="finishGameSession('${session.id}')">Terminer et podium</button>` : ""}
+      </div>
+      ${ranking.length ? `<div class="tiny" style="margin-top:10px">Leader : ${escapeHtml(ranking[0].name)} · ${ranking[0].score} pts</div>` : ""}
+    </article>
+  `;
+}
+
+function renderGameTeacherPage(user) {
+  const quizzes = state.gameQuizzes.filter((quiz) => user.role === "admin" || quiz.createdBy === user.id);
+  const sessions = state.gameSessions.filter((session) => quizzes.some((quiz) => quiz.id === session.quizId)).slice(0, 6);
+  return `
+    <section class="panel">
+      <div class="toolbar" style="justify-content:space-between">
+        <div>
+          <p class="eyebrow">Reviens en Jeu</p>
+          <h2 class="section-title">Mes quiz</h2>
+          <p class="section-subtitle">Créez des quiz de cours, de révision ou de compétition en classe.</p>
+        </div>
+        <button class="btn-primary" onclick="openGameQuizBuilder()">Créer un quiz</button>
+      </div>
+      <div class="course-grid" style="margin-top:18px">
+        ${quizzes.length ? quizzes.map((quiz) => renderGameQuizCard(quiz, user)).join("") : `<div class="empty-state">Aucun quiz Reviens en Jeu pour le moment.</div>`}
+      </div>
+    </section>
+    <section class="dashboard-grid" style="margin-top:18px">
+      <div class="panel">
+        <h2 class="section-title">Sessions récentes</h2>
+        <div class="simple-list" style="margin-top:18px">${sessions.length ? sessions.map((session) => renderGameSessionCard(session, user)).join("") : `<div class="empty-state">Aucune session lancée.</div>`}</div>
+      </div>
+      <div class="panel">
+        <h2 class="section-title">Principe</h2>
+        <div class="simple-list" style="margin-top:18px">
+          <div class="module-card"><strong>Mode entraînement</strong><div class="meta">Quiz lié à un cours ou une leçon.</div></div>
+          <div class="module-card"><strong>Mode compétition</strong><div class="meta">Code de participation et podium final.</div></div>
+          <div class="module-card"><strong>Mode révision</strong><div class="meta">Quiz indépendant pour s'exercer.</div></div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
+function renderGameStudentPage(user) {
+  const openSessions = state.gameSessions.filter((session) => session.status !== "finished");
+  const revisionQuizzes = state.gameQuizzes.filter((quiz) => quiz.status === "published" && (quiz.mode === "revision" || !quiz.courseId));
+  return `
+    <section class="panel">
+      <div class="toolbar" style="justify-content:space-between">
+        <div>
+          <p class="eyebrow">Reviens en Jeu</p>
+          <h2 class="section-title">Participer à un quiz</h2>
+          <p class="section-subtitle">Entrez le code donné par l'enseignant ou lancez un quiz de révision.</p>
+        </div>
+      </div>
+      <form id="game-join-form" class="form-grid" style="margin-top:18px">
+        <div class="field"><label for="game-code">Code de participation</label><input id="game-code" name="code" placeholder="Ex: A2EF9Q" required></div>
+        <div class="field"><label>&nbsp;</label><button class="btn-primary" type="submit">Rejoindre</button></div>
+      </form>
+    </section>
+    <section class="dashboard-grid" style="margin-top:18px">
+      <div class="panel">
+        <h2 class="section-title">Sessions ouvertes</h2>
+        <div class="simple-list" style="margin-top:18px">${openSessions.length ? openSessions.slice(0, 5).map((session) => renderGameSessionCard(session, user)).join("") : `<div class="empty-state">Aucune compétition ouverte pour le moment.</div>`}</div>
+      </div>
+      <div class="panel">
+        <h2 class="section-title">Révision libre</h2>
+        <div class="course-grid" style="margin-top:18px">${revisionQuizzes.length ? revisionQuizzes.map((quiz) => renderGameQuizCard(quiz, user)).join("") : `<div class="empty-state">Aucun quiz de révision disponible.</div>`}</div>
+      </div>
+    </section>
+  `;
+}
+
+function renderGameSessionPage(user) {
+  const session = getGameSessionById(state.ui.activeGameSessionId);
+  const quiz = getGameQuizById(session?.quizId);
+  if (!session || !quiz) return `<section class="panel"><div class="empty-state">Session introuvable.</div></section>`;
+  if (user.role !== "student") return renderGameResults(session, quiz, user);
+  let participant = session.participants.find((item) => item.userId === user.id);
+  if (!participant) return `<section class="panel"><div class="empty-state">Rejoignez d'abord cette session avec le code.</div></section>`;
+  if (session.status === "finished" || (participant.answers || []).length >= quiz.questions.length) return renderGameResults(session, quiz, user);
+  const questionIndex = participant.answers.length;
+  const question = quiz.questions[questionIndex];
+  if (!participant.currentQuestionStartedAt) participant.currentQuestionStartedAt = Date.now();
+  return `
+    <section class="panel game-play-panel">
+      <div class="toolbar" style="justify-content:space-between">
+        <button class="btn-ghost" onclick="setScreen('game')">Retour</button>
+        <span class="badge warning">Question ${questionIndex + 1}/${quiz.questions.length}</span>
+      </div>
+      <p class="eyebrow">Reviens en Jeu</p>
+      <h2 class="section-title">${escapeHtml(quiz.title)}</h2>
+      <div class="game-question">
+        <h3>${escapeHtml(question.prompt)}</h3>
+        <div class="tiny">${question.durationSeconds || 30} secondes · ${question.points || 10} points</div>
+      </div>
+      <form id="game-answer-form" data-session-id="${session.id}" data-question-id="${question.id}" class="game-answer-grid">
+        ${(question.options || []).map((option, index) => `
+          <label class="game-answer-card">
+            <input type="radio" name="answer" value="${escapeHtml(option)}" required>
+            <span>${index + 1}. ${escapeHtml(option)}</span>
+          </label>
+        `).join("")}
+        <div class="field full"><button class="btn-primary" type="submit">Valider ma réponse</button></div>
+      </form>
+    </section>
+  `;
+}
+
+function renderGameResults(session, quiz, user) {
+  const ranking = getGameRanking(session);
+  const podium = ranking.slice(0, 3);
+  return `
+    <section class="panel">
+      <div class="toolbar" style="justify-content:space-between">
+        <button class="btn-ghost" onclick="setScreen('game')">Retour</button>
+        <span class="badge success">${session.status === "finished" ? "Podium final" : "Résultats provisoires"}</span>
+      </div>
+      <p class="eyebrow">Reviens en Jeu</p>
+      <h2 class="section-title">${escapeHtml(quiz.title)}</h2>
+      <div class="podium-grid" style="margin-top:18px">
+        ${podium.map((item, index) => `<div class="podium-card rank-${index + 1}"><strong>${index + 1}</strong><h3>${escapeHtml(item.name)}</h3><p>${item.score} pts</p></div>`).join("") || `<div class="empty-state">Aucun participant classé.</div>`}
+      </div>
+      <div class="table-card" style="margin-top:18px">
+        <table>
+          <thead><tr><th>Rang</th><th>Élève</th><th>Score</th><th>Réponses</th></tr></thead>
+          <tbody>${ranking.map((item, index) => `<tr><td>${index + 1}</td><td>${escapeHtml(item.name)}</td><td>${item.score}</td><td>${(item.answers || []).length}/${quiz.questions.length}</td></tr>`).join("")}</tbody>
+        </table>
+      </div>
+      ${canManageGameQuiz(user, quiz) && session.status !== "finished" ? `<div class="toolbar" style="margin-top:18px"><button class="btn-primary" onclick="finishGameSession('${session.id}')">Terminer et enregistrer</button></div>` : ""}
+    </section>
+  `;
+}
+
+function renderReviensEnJeuPage(user) {
+  if (state.ui.activeGameSessionId) return renderGameSessionPage(user);
+  return user.role === "student" ? renderGameStudentPage(user) : renderGameTeacherPage(user);
+}
+
 function renderCourseMainMenu(course, user, activeModule, activeLesson, activities, completionMetrics, moduleMetrics) {
   const release = normalizeCourseReleaseState(course.release);
   const isStudent = user.role === "student";
@@ -3769,6 +4010,7 @@ function renderDashboardHeader(user) {
           ${user.role === "student" ? `<button class="btn-accent" onclick="focusFirstStudentCourse()">Reprendre mon parcours</button>` : ""}
           ${user.role === "teacher" ? `<button class="btn-accent" onclick="openCourseBuilder()">Ajouter un nouveau cours</button>` : ""}
           ${user.role === "admin" ? `<button class="btn-accent" onclick="openPlatformSettings()">Configurer le site</button>` : ""}
+          <button class="btn-ghost" onclick="openReviensEnJeu()">Reviens en Jeu</button>
           <button class="btn-ghost" onclick="markAllNotificationsRead('${user.id}')">Marquer les notifications comme lues</button>
         </div>
       </div>
@@ -3852,6 +4094,15 @@ function renderStudentDashboard(user) {
       <div class="panel">
         <h2 class="section-title">Annonces rapides</h2>
         <div class="feed-list" style="margin-top:18px">${renderAnnouncements()}</div>
+      </div>
+    </section>
+    <section class="panel" style="margin-top:18px">
+      <div class="toolbar" style="justify-content:space-between">
+        <div>
+          <h2 class="section-title">Reviens en Jeu</h2>
+          <p class="section-subtitle">Rejoignez une compétition avec un code ou entraînez-vous avec un quiz de révision.</p>
+        </div>
+        <button class="btn-primary" onclick="openReviensEnJeu()">Participer à un quiz</button>
       </div>
     </section>
     ${renderStudentCommunication(user)}
@@ -3991,6 +4242,19 @@ function renderTeacherDashboard(user) {
       </div>
     </section>
     <section class="dashboard-grid" style="margin-top:18px">
+      <div class="panel">
+        <div class="toolbar" style="justify-content:space-between">
+          <div>
+            <h2 class="section-title">Reviens en Jeu</h2>
+            <p class="section-subtitle">Créez des quiz et lancez des compétitions avec un code.</p>
+          </div>
+          <button class="btn-primary" onclick="openReviensEnJeu()">Mes quiz</button>
+        </div>
+        <div class="simple-list" style="margin-top:18px">
+          <div class="module-card"><strong>${state.gameQuizzes.filter((quiz) => quiz.createdBy === user.id).length} quiz</strong><div class="meta">Créés dans votre espace.</div></div>
+          <div class="module-card"><strong>${state.gameSessions.filter((session) => state.gameQuizzes.some((quiz) => quiz.id === session.quizId && quiz.createdBy === user.id)).length} session(s)</strong><div class="meta">Parties lancées.</div></div>
+        </div>
+      </div>
       <div class="panel">
         <h2 class="section-title">Messagerie</h2>
         <div class="toolbar" style="justify-content:flex-end">
@@ -4408,6 +4672,7 @@ function renderDashboard(user) {
           <div class="nav-list">
             <button class="nav-button active" onclick="setScreen('dashboard')">Vue d’ensemble</button>
             <button class="nav-button" onclick="openProfileModal()">Profil</button>
+            <button class="nav-button" onclick="openReviensEnJeu()">Reviens en Jeu</button>
             ${user.role !== "student" ? `<button class="nav-button" onclick="openCourseBuilder()">Créer un cours</button>` : ""}
             ${user.role === "admin" ? `<button class="nav-button" onclick="openPlatformSettings()">Paramètres du site</button>` : ""}
           </div>
@@ -4774,6 +5039,7 @@ function renderApp() {
   else if (!user) app.innerHTML = renderLanding();
   else if (state.ui.screen === "course") app.innerHTML = renderCourseWorkspace(user);
   else if (state.ui.screen === "activity") app.innerHTML = renderActivityWorkspace(user);
+  else if (state.ui.screen === "game") app.innerHTML = renderReviensEnJeuPage(user);
   else if (state.ui.screen === "landing") app.innerHTML = renderLanding();
   else app.innerHTML = renderDashboard(user);
   bindForms();
@@ -4788,6 +5054,10 @@ function openCourse(courseId) {
 
 function openActivity(activityId) {
   setScreen("activity", { activeActivityId: activityId });
+}
+
+function openGameSession(sessionId) {
+  setScreen("game", { activeGameSessionId: sessionId });
 }
 
 function selectModule(courseId, moduleId) {
@@ -5924,6 +6194,262 @@ function purchaseCourse(courseId) {
   `);
 }
 
+function renderGameQuizScopeFields(quiz = {}) {
+  const actor = getCurrentUser();
+  const courses = getVisibleCoursesForUser(actor).filter((course) => actor?.role !== "student" && canTeachCourse(actor, course));
+  const selectedCourse = getCourseById(quiz.courseId) || courses[0];
+  const lessons = (selectedCourse?.modules || []).flatMap((module) => (module.lessons || []).map((lesson) => ({ ...lesson, moduleTitle: module.title })));
+  return `
+    <div class="field"><label for="game-course">Cours lié</label><select id="game-course" name="courseId"><option value="">Quiz indépendant</option>${courses.map((course) => `<option value="${course.id}" ${quiz.courseId === course.id ? "selected" : ""}>${escapeHtml(course.title)}</option>`).join("")}</select></div>
+    <div class="field"><label for="game-lesson">Leçon liée</label><select id="game-lesson" name="lessonId"><option value="">Aucune leçon</option>${lessons.map((lesson) => `<option value="${lesson.id}" ${quiz.lessonId === lesson.id ? "selected" : ""}>${escapeHtml(lesson.moduleTitle)} · ${escapeHtml(lesson.title)}</option>`).join("")}</select></div>
+    <div class="field"><label for="game-subject">Matière</label><input id="game-subject" name="subject" value="${escapeHtml(quiz.subject || "")}" placeholder="Mathématiques, français..."></div>
+    <div class="field"><label for="game-class">Classe</label><input id="game-class" name="className" value="${escapeHtml(quiz.className || "")}" placeholder="4ème, Terminale, CAT 1..."></div>
+  `;
+}
+
+function openGameQuizBuilder() {
+  openModal(`
+    <h2>Créer un quiz Reviens en Jeu</h2>
+    <form id="game-quiz-form" class="form-grid" style="margin-top:18px">
+      <div class="field full"><label for="game-title">Titre</label><input id="game-title" name="title" required></div>
+      <div class="field full"><label for="game-description">Description</label><textarea id="game-description" name="description" placeholder="Objectif du quiz, consignes courtes..."></textarea></div>
+      <div class="field"><label for="game-mode">Mode principal</label><select id="game-mode" name="mode"><option value="competition">Compétition</option><option value="revision">Révision</option><option value="training">Entraînement</option></select></div>
+      <div class="field"><label for="game-status">Statut</label><select id="game-status" name="status"><option value="published">Publié</option><option value="draft">Brouillon</option></select></div>
+      ${renderGameQuizScopeFields()}
+      <div class="field full"><button class="btn-primary" type="submit">Créer le quiz</button></div>
+    </form>
+  `);
+}
+
+function openGameQuizEditor(quizId) {
+  const quiz = getGameQuizById(quizId);
+  if (!quiz || !canManageGameQuiz(getCurrentUser(), quiz)) return;
+  openModal(`
+    <h2>Modifier le quiz</h2>
+    <form id="game-quiz-edit-form" data-quiz-id="${quiz.id}" class="form-grid" style="margin-top:18px">
+      <div class="field full"><label for="edit-game-title">Titre</label><input id="edit-game-title" name="title" value="${escapeHtml(quiz.title)}" required></div>
+      <div class="field full"><label for="edit-game-description">Description</label><textarea id="edit-game-description" name="description">${escapeHtml(quiz.description || "")}</textarea></div>
+      <div class="field"><label for="edit-game-mode">Mode principal</label><select id="edit-game-mode" name="mode"><option value="competition" ${quiz.mode === "competition" ? "selected" : ""}>Compétition</option><option value="revision" ${quiz.mode === "revision" ? "selected" : ""}>Révision</option><option value="training" ${quiz.mode === "training" ? "selected" : ""}>Entraînement</option></select></div>
+      <div class="field"><label for="edit-game-status">Statut</label><select id="edit-game-status" name="status"><option value="published" ${quiz.status === "published" ? "selected" : ""}>Publié</option><option value="draft" ${quiz.status === "draft" ? "selected" : ""}>Brouillon</option></select></div>
+      ${renderGameQuizScopeFields(quiz)}
+      <div class="field full"><button class="btn-primary" type="submit">Enregistrer</button></div>
+    </form>
+  `);
+}
+
+function openGameQuestionBuilder(quizId) {
+  const quiz = getGameQuizById(quizId);
+  if (!quiz || !canManageGameQuiz(getCurrentUser(), quiz)) return;
+  openModal(`
+    <h2>Questions de ${escapeHtml(quiz.title)}</h2>
+    <div class="simple-list" style="margin-top:14px">
+      ${quiz.questions.length ? quiz.questions.map((question, index) => `<div class="module-card"><strong>${index + 1}. ${escapeHtml(question.prompt)}</strong><div class="meta">${question.points} pts · ${question.durationSeconds}s · bonne réponse : ${escapeHtml(question.answer)}</div></div>`).join("") : `<div class="empty-state">Aucune question pour ce quiz.</div>`}
+    </div>
+    <form id="game-question-form" data-quiz-id="${quiz.id}" class="form-grid" style="margin-top:18px">
+      <div class="field full"><label for="game-question-prompt">Question</label><textarea id="game-question-prompt" name="prompt" required></textarea></div>
+      <div class="field"><label>Réponse 1</label><input name="option1" required></div>
+      <div class="field"><label>Réponse 2</label><input name="option2" required></div>
+      <div class="field"><label>Réponse 3</label><input name="option3" required></div>
+      <div class="field"><label>Réponse 4</label><input name="option4" required></div>
+      <div class="field"><label for="game-answer">Bonne réponse</label><select id="game-answer" name="answerIndex"><option value="0">Réponse 1</option><option value="1">Réponse 2</option><option value="2">Réponse 3</option><option value="3">Réponse 4</option></select></div>
+      <div class="field"><label for="game-duration">Durée par question</label><input id="game-duration" name="durationSeconds" type="number" min="5" max="180" value="30"></div>
+      <div class="field"><label for="game-points">Points</label><input id="game-points" name="points" type="number" min="1" value="10"></div>
+      <div class="field full"><button class="btn-primary" type="submit">Ajouter la question</button></div>
+    </form>
+  `);
+}
+
+async function handleGameQuizCreate(event) {
+  event.preventDefault();
+  const formData = new FormData(event.currentTarget);
+  const quiz = {
+    id: crypto.randomUUID(),
+    title: String(formData.get("title")).trim(),
+    description: String(formData.get("description") || "").trim(),
+    mode: String(formData.get("mode") || "competition"),
+    status: String(formData.get("status") || "published"),
+    courseId: String(formData.get("courseId") || "").trim(),
+    lessonId: String(formData.get("lessonId") || "").trim(),
+    subject: String(formData.get("subject") || "").trim(),
+    className: String(formData.get("className") || "").trim(),
+    questions: [],
+    createdBy: getCurrentUser().id,
+    createdAt: nowISO(),
+    updatedAt: nowISO()
+  };
+  state.gameQuizzes.unshift(quiz);
+  addLog(getCurrentUser().id, `Quiz Reviens en Jeu créé - ${quiz.title}`);
+  const remote = await publishPlatformEvent("game.quiz.created", { quiz });
+  mergeRemoteEntity(quiz, extractRemoteEntity(remote, "quiz"));
+  closeModal();
+  saveState();
+}
+
+async function handleGameQuizEdit(event) {
+  event.preventDefault();
+  const quiz = getGameQuizById(event.currentTarget.dataset.quizId);
+  if (!quiz || !canManageGameQuiz(getCurrentUser(), quiz)) return;
+  const formData = new FormData(event.currentTarget);
+  quiz.title = String(formData.get("title")).trim();
+  quiz.description = String(formData.get("description") || "").trim();
+  quiz.mode = String(formData.get("mode") || "competition");
+  quiz.status = String(formData.get("status") || "published");
+  quiz.courseId = String(formData.get("courseId") || "").trim();
+  quiz.lessonId = String(formData.get("lessonId") || "").trim();
+  quiz.subject = String(formData.get("subject") || "").trim();
+  quiz.className = String(formData.get("className") || "").trim();
+  quiz.updatedAt = nowISO();
+  const remote = await publishPlatformEvent("game.quiz.updated", { quiz });
+  mergeRemoteEntity(quiz, extractRemoteEntity(remote, "quiz"));
+  closeModal();
+  saveState();
+}
+
+async function handleGameQuestionCreate(event) {
+  event.preventDefault();
+  const quiz = getGameQuizById(event.currentTarget.dataset.quizId);
+  if (!quiz || !canManageGameQuiz(getCurrentUser(), quiz)) return;
+  const formData = new FormData(event.currentTarget);
+  const options = [1, 2, 3, 4].map((index) => String(formData.get(`option${index}`) || "").trim());
+  const answer = options[Number(formData.get("answerIndex") || 0)] || options[0];
+  quiz.questions.push({
+    id: crypto.randomUUID(),
+    prompt: String(formData.get("prompt")).trim(),
+    options,
+    answer,
+    durationSeconds: Number(formData.get("durationSeconds")) || 30,
+    points: Number(formData.get("points")) || 10
+  });
+  quiz.updatedAt = nowISO();
+  const remote = await publishPlatformEvent("game.quiz.updated", { quiz });
+  mergeRemoteEntity(quiz, extractRemoteEntity(remote, "quiz"));
+  openGameQuestionBuilder(quiz.id);
+  saveState();
+}
+
+async function removeGameQuiz(quizId) {
+  const quiz = getGameQuizById(quizId);
+  if (!quiz || !canManageGameQuiz(getCurrentUser(), quiz)) return;
+  if (!confirm(`Supprimer le quiz "${quiz.title}" ?`)) return;
+  state.gameQuizzes = state.gameQuizzes.filter((item) => item.id !== quizId);
+  state.gameSessions = state.gameSessions.filter((session) => session.quizId !== quizId);
+  state.gameResults = state.gameResults.filter((result) => result.quizId !== quizId);
+  await publishPlatformEvent("game.quiz.deleted", { quizId });
+  saveState();
+}
+
+async function startGameSession(quizId) {
+  const quiz = getGameQuizById(quizId);
+  if (!quiz || !canManageGameQuiz(getCurrentUser(), quiz)) return;
+  if (!quiz.questions.length) {
+    openModal(`<h2>Questions requises</h2><p class="section-subtitle">Ajoutez au moins une question avant de lancer la compétition.</p>`);
+    return;
+  }
+  const session = {
+    id: crypto.randomUUID(),
+    quizId,
+    code: generateGameCode(),
+    mode: "competition",
+    status: "running",
+    participants: [],
+    createdBy: getCurrentUser().id,
+    startedAt: nowISO(),
+    finishedAt: null
+  };
+  state.gameSessions.unshift(session);
+  const remote = await publishPlatformEvent("game.session.started", { session });
+  mergeRemoteEntity(session, extractRemoteEntity(remote, "session"));
+  saveState();
+  openGameSession(session.id);
+}
+
+async function startRevisionSession(quizId) {
+  const quiz = getGameQuizById(quizId);
+  const user = getCurrentUser();
+  if (!quiz || !user || user.role !== "student") return;
+  const session = {
+    id: crypto.randomUUID(),
+    quizId,
+    code: `REV${generateGameCode().slice(0, 3)}`,
+    mode: "revision",
+    status: "running",
+    participants: [{ userId: user.id, name: user.name, answers: [], joinedAt: nowISO(), currentQuestionStartedAt: Date.now() }],
+    createdBy: user.id,
+    startedAt: nowISO(),
+    finishedAt: null
+  };
+  state.gameSessions.unshift(session);
+  await publishPlatformEvent("game.session.started", { session });
+  saveState();
+  openGameSession(session.id);
+}
+
+async function handleGameJoin(event) {
+  event.preventDefault();
+  const code = String(new FormData(event.currentTarget).get("code") || "").trim();
+  const session = getGameSessionByCode(code);
+  const user = getCurrentUser();
+  if (!session || session.status === "finished") {
+    openModal(`<h2>Code invalide</h2><p class="section-subtitle">Vérifiez le code donné par l'enseignant.</p>`);
+    return;
+  }
+  if (!session.participants.some((item) => item.userId === user.id)) {
+    session.participants.push({ userId: user.id, name: user.name, answers: [], joinedAt: nowISO(), currentQuestionStartedAt: Date.now() });
+    await publishPlatformEvent("game.session.joined", { sessionId: session.id, participant: session.participants[session.participants.length - 1] });
+  }
+  saveState();
+  openGameSession(session.id);
+}
+
+async function handleGameAnswerSubmit(event) {
+  event.preventDefault();
+  const session = getGameSessionById(event.currentTarget.dataset.sessionId);
+  const quiz = getGameQuizById(session?.quizId);
+  const user = getCurrentUser();
+  const participant = session?.participants.find((item) => item.userId === user.id);
+  if (!session || !quiz || !participant) return;
+  const questionId = event.currentTarget.dataset.questionId;
+  if (participant.answers.some((answer) => answer.questionId === questionId)) return;
+  const value = String(new FormData(event.currentTarget).get("answer") || "");
+  participant.answers.push({
+    questionId,
+    value,
+    elapsedMs: Date.now() - Number(participant.currentQuestionStartedAt || Date.now()),
+    answeredAt: nowISO()
+  });
+  participant.currentQuestionStartedAt = Date.now();
+  await publishPlatformEvent("game.answer.submitted", { sessionId: session.id, participant });
+  if ((participant.answers || []).length >= quiz.questions.length && session.mode === "revision") {
+    await finishGameSession(session.id, { silent: true });
+  } else {
+    saveState();
+  }
+}
+
+async function finishGameSession(sessionId, options = {}) {
+  const session = getGameSessionById(sessionId);
+  const quiz = getGameQuizById(session?.quizId);
+  if (!session || !quiz) return;
+  session.status = "finished";
+  session.finishedAt = nowISO();
+  const results = getGameRanking(session).map((item, index) => ({
+    id: crypto.randomUUID(),
+    sessionId: session.id,
+    quizId: quiz.id,
+    userId: item.userId,
+    name: item.name,
+    score: item.score,
+    rank: index + 1,
+    answers: item.answers || [],
+    createdAt: nowISO()
+  }));
+  state.gameResults = state.gameResults.filter((result) => result.sessionId !== session.id).concat(results);
+  await publishPlatformEvent("game.session.finished", { session, results });
+  if (!options.silent) addLog(getCurrentUser()?.id, `Session Reviens en Jeu terminée - ${quiz.title}`);
+  saveState();
+  openGameSession(session.id);
+}
+
 async function processPayment(courseId, provider) {
   const user = getCurrentUser();
   const course = getCourseById(courseId);
@@ -6114,6 +6640,11 @@ function bindForms() {
   document.getElementById("admin-user-form")?.addEventListener("submit", handleAdminUserCreate);
   document.getElementById("admin-user-edit-form")?.addEventListener("submit", handleAdminUserEdit);
   document.getElementById("profile-edit-form")?.addEventListener("submit", handleProfileEdit);
+  document.getElementById("game-quiz-form")?.addEventListener("submit", handleGameQuizCreate);
+  document.getElementById("game-quiz-edit-form")?.addEventListener("submit", handleGameQuizEdit);
+  document.getElementById("game-question-form")?.addEventListener("submit", handleGameQuestionCreate);
+  document.getElementById("game-join-form")?.addEventListener("submit", handleGameJoin);
+  document.getElementById("game-answer-form")?.addEventListener("submit", handleGameAnswerSubmit);
 }
 
 async function handleCourseEnrollmentAssign(event) {

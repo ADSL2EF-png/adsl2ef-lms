@@ -321,6 +321,83 @@ a { color: inherit; }
   opacity: .58;
   cursor: not-allowed;
 }
+.game-card {
+  border-color: rgba(23,71,166,0.18);
+}
+.game-play-panel {
+  max-width: 980px;
+  margin: 0 auto;
+}
+.game-question {
+  margin: 18px 0;
+  padding: 22px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, var(--primary-dark), var(--primary));
+  color: #fff;
+}
+.game-question h3 {
+  margin: 0 0 8px;
+  font-size: 1.5rem;
+}
+.game-question .tiny {
+  color: rgba(255,255,255,.78);
+}
+.game-answer-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.game-answer-card {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  min-height: 74px;
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 18px;
+  background: #fff;
+  cursor: pointer;
+}
+.game-answer-card:hover {
+  border-color: var(--primary);
+  background: #f4f8ff;
+}
+.game-answer-card input {
+  width: auto;
+}
+.game-answer-card span {
+  font-weight: 800;
+  overflow-wrap: anywhere;
+}
+.podium-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14px;
+  align-items: end;
+}
+.podium-card {
+  padding: 20px;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 22px;
+  background: #fff;
+}
+.podium-card strong {
+  display: inline-grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  margin-bottom: 10px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #18233d;
+  font-size: 1.2rem;
+}
+.podium-card.rank-1 {
+  min-height: 190px;
+  background: linear-gradient(180deg, #fff7dd, #fff);
+  border-color: rgba(224,161,38,.55);
+}
 .resource-grid { margin-top: 16px; }
 .resource-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-radius: 16px; border: 1px solid var(--line); background: white; }
 .lesson-embed-list {
@@ -794,6 +871,22 @@ th { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-
   .resource-item {
     align-items: stretch;
     flex-direction: column;
+  }
+  .game-answer-grid,
+  .podium-grid {
+    grid-template-columns: 1fr;
+  }
+  .game-question {
+    padding: 16px;
+    border-radius: 16px;
+  }
+  .game-question h3 {
+    font-size: 1.15rem;
+  }
+  .game-answer-card {
+    min-height: 62px;
+    padding: 13px;
+    border-radius: 16px;
   }
   .modal-backdrop { padding: 10px; align-items: start; }
   .modal-card { width: 100%; max-height: 94vh; border-radius: 20px; }

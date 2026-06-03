@@ -299,6 +299,13 @@ Payload envoye :
 - `quiz.submitted`
 - `assignment.submitted`
 - `submission.reviewed`
+- `game.quiz.created`
+- `game.quiz.updated`
+- `game.quiz.deleted`
+- `game.session.started`
+- `game.session.joined`
+- `game.answer.submitted`
+- `game.session.finished`
 - `user.created`
 - `user.updated`
 - `user.deleted`

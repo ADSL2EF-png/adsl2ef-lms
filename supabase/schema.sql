@@ -138,6 +138,85 @@ create table if not exists public.submissions (
 
 alter table public.submissions add column if not exists file_url text default '';
 
+create table if not exists public.game_quizzes (
+  id uuid primary key default gen_random_uuid(),
+  title text not null,
+  description text default '',
+  mode text not null default 'competition' check (mode in ('training', 'competition', 'revision')),
+  status text not null default 'published' check (status in ('draft', 'published', 'archived')),
+  course_id uuid references public.courses(id) on delete set null,
+  lesson_id uuid references public.lessons(id) on delete set null,
+  subject text default '',
+  class_name text default '',
+  created_by uuid references public.profiles(id) on delete set null,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create table if not exists public.game_questions (
+  id uuid primary key default gen_random_uuid(),
+  quiz_id uuid not null references public.game_quizzes(id) on delete cascade,
+  prompt text not null,
+  options jsonb not null default '[]'::jsonb,
+  answer text not null,
+  duration_seconds integer not null default 30,
+  points integer not null default 10,
+  position integer not null default 1
+);
+
+create table if not exists public.game_sessions (
+  id uuid primary key default gen_random_uuid(),
+  quiz_id uuid not null references public.game_quizzes(id) on delete cascade,
+  code text not null unique,
+  mode text not null default 'competition' check (mode in ('competition', 'revision')),
+  status text not null default 'running' check (status in ('running', 'finished', 'cancelled')),
+  created_by uuid references public.profiles(id) on delete set null,
+  started_at timestamptz not null default now(),
+  finished_at timestamptz
+);
+
+create table if not exists public.game_participants (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references public.game_sessions(id) on delete cascade,
+  profile_id uuid references public.profiles(id) on delete set null,
+  display_name text not null,
+  joined_at timestamptz not null default now(),
+  unique (session_id, profile_id)
+);
+
+create table if not exists public.game_answers (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references public.game_sessions(id) on delete cascade,
+  participant_id uuid not null references public.game_participants(id) on delete cascade,
+  question_id uuid not null references public.game_questions(id) on delete cascade,
+  answer text not null,
+  elapsed_ms integer not null default 0,
+  score integer not null default 0,
+  answered_at timestamptz not null default now(),
+  unique (participant_id, question_id)
+);
+
+create table if not exists public.game_results (
+  id uuid primary key default gen_random_uuid(),
+  session_id uuid not null references public.game_sessions(id) on delete cascade,
+  quiz_id uuid not null references public.game_quizzes(id) on delete cascade,
+  profile_id uuid references public.profiles(id) on delete set null,
+  display_name text not null,
+  score integer not null default 0,
+  rank integer not null default 0,
+  answers jsonb not null default '[]'::jsonb,
+  created_at timestamptz not null default now()
+);
+
+create index if not exists game_quizzes_created_by_idx on public.game_quizzes(created_by);
+create index if not exists game_quizzes_course_idx on public.game_quizzes(course_id);
+create index if not exists game_questions_quiz_idx on public.game_questions(quiz_id, position);
+create index if not exists game_sessions_code_idx on public.game_sessions(code);
+create index if not exists game_sessions_quiz_idx on public.game_sessions(quiz_id, status);
+create index if not exists game_participants_session_idx on public.game_participants(session_id);
+create index if not exists game_answers_session_idx on public.game_answers(session_id);
+create index if not exists game_results_session_idx on public.game_results(session_id, rank);
+
 create table if not exists public.completion_records (
   id uuid primary key default gen_random_uuid(),
   course_id uuid not null references public.courses(id) on delete cascade,
@@ -343,6 +422,12 @@ alter table public.attendance_records enable row level security;
 alter table public.notifications enable row level security;
 alter table public.audit_logs enable row level security;
 alter table public.lms_state enable row level security;
+alter table public.game_quizzes enable row level security;
+alter table public.game_questions enable row level security;
+alter table public.game_sessions enable row level security;
+alter table public.game_participants enable row level security;
+alter table public.game_answers enable row level security;
+alter table public.game_results enable row level security;
 
 drop policy if exists "profiles read" on public.profiles;
 drop policy if exists "courses read" on public.courses;
@@ -356,6 +441,12 @@ drop policy if exists "announcements read" on public.announcements;
 drop policy if exists "forum threads read" on public.forum_threads;
 drop policy if exists "forum posts read" on public.forum_posts;
 drop policy if exists "service role all lms state" on public.lms_state;
+drop policy if exists "service role all game quizzes" on public.game_quizzes;
+drop policy if exists "service role all game questions" on public.game_questions;
+drop policy if exists "service role all game sessions" on public.game_sessions;
+drop policy if exists "service role all game participants" on public.game_participants;
+drop policy if exists "service role all game answers" on public.game_answers;
+drop policy if exists "service role all game results" on public.game_results;
 
 create policy "service role all profiles" on public.profiles for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 create policy "service role all courses" on public.courses for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
@@ -378,6 +469,12 @@ create policy "service role all attendance" on public.attendance_records for all
 create policy "service role all notifications" on public.notifications for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 create policy "service role all audit logs" on public.audit_logs for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 create policy "service role all lms state" on public.lms_state for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+create policy "service role all game quizzes" on public.game_quizzes for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+create policy "service role all game questions" on public.game_questions for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+create policy "service role all game sessions" on public.game_sessions for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+create policy "service role all game participants" on public.game_participants for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+create policy "service role all game answers" on public.game_answers for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+create policy "service role all game results" on public.game_results for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 
 create policy "authenticated users read own profile"
 on public.profiles
