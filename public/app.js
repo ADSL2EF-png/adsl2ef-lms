@@ -2827,6 +2827,26 @@ function renderAboutPage() {
         <button class="btn-ghost" onclick="setScreen('contact')">Nous contacter</button>
       </div>
     </section>
+    <section class="panel founder-message">
+      <div class="founder-photo-wrap">
+        <img class="founder-photo" src="photo-promoteur.jpg" alt="ADJAGBA Pinida, Fondateur et Directeur Général d'ADSL-2EF">
+      </div>
+      <div class="founder-copy">
+        <p class="eyebrow">Mot du Promoteur</p>
+        <h2 class="section-title">Bienvenue sur ADSL-2EF.</h2>
+        <div class="founder-text">
+          <p>Depuis plusieurs années, notre engagement est d'accompagner les apprenants, les enseignants et les professionnels dans leur quête d'excellence.</p>
+          <p>Convaincus que l'éducation est le moteur du développement, nous mettons à votre disposition des solutions innovantes de soutien scolaire, de formation professionnelle et d'accompagnement pédagogique, en présentiel comme en ligne.</p>
+          <p>Notre ambition est de rendre une éducation de qualité accessible au plus grand nombre et de préparer les citoyens de demain aux défis d'un monde en constante évolution.</p>
+          <p>Je vous remercie pour votre confiance et vous souhaite une excellente expérience au sein d'ADSL-2EF.</p>
+        </div>
+        <div class="founder-signature">
+          <strong>ADJAGBA Pinida</strong>
+          <span>Fondateur et Directeur Général</span>
+          <span>ADSL-2EF</span>
+        </div>
+      </div>
+    </section>
     <section class="contact-grid">
       <div class="panel">
         <h2 class="section-title">Notre mission</h2>
