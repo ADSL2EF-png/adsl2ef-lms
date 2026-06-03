@@ -230,6 +230,12 @@ create table if not exists public.audit_logs (
   created_at timestamptz not null default now()
 );
 
+create table if not exists public.lms_state (
+  key text primary key,
+  value text not null,
+  updated_at timestamptz not null default now()
+);
+
 create or replace function public.touch_updated_at()
 returns trigger
 language plpgsql
@@ -331,6 +337,7 @@ alter table public.attendance_sessions enable row level security;
 alter table public.attendance_records enable row level security;
 alter table public.notifications enable row level security;
 alter table public.audit_logs enable row level security;
+alter table public.lms_state enable row level security;
 
 drop policy if exists "profiles read" on public.profiles;
 drop policy if exists "courses read" on public.courses;
@@ -343,6 +350,7 @@ drop policy if exists "activity questions read" on public.activity_questions;
 drop policy if exists "announcements read" on public.announcements;
 drop policy if exists "forum threads read" on public.forum_threads;
 drop policy if exists "forum posts read" on public.forum_posts;
+drop policy if exists "service role all lms state" on public.lms_state;
 
 create policy "service role all profiles" on public.profiles for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 create policy "service role all courses" on public.courses for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
@@ -364,6 +372,7 @@ create policy "service role all sessions" on public.attendance_sessions for all 
 create policy "service role all attendance" on public.attendance_records for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 create policy "service role all notifications" on public.notifications for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 create policy "service role all audit logs" on public.audit_logs for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
+create policy "service role all lms state" on public.lms_state for all using (auth.role() = 'service_role') with check (auth.role() = 'service_role');
 
 create policy "authenticated users read own profile"
 on public.profiles
