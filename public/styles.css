@@ -579,11 +579,16 @@ th { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-
 }
 
 @media (max-width: 720px) {
-  .topbar, #app { padding-left: 16px; padding-right: 16px; }
+  .site-banner { padding: 8px 12px; }
+  .site-banner strong { font-size: .72rem; line-height: 1.25; }
+  .site-banner span { font-size: .76rem; }
+  .topbar, #app { padding-left: 12px; padding-right: 12px; }
+  .topbar { gap: 10px; padding-top: 12px; padding-bottom: 12px; }
   .summary-grid, .stats-grid, .analytics-grid, .course-grid, .activity-grid, .dashboard-grid, .table-grid, .resource-grid, .quick-grid, .form-grid, .hero-stats, .store-grid, .storefront-hero, .settings-status-grid { grid-template-columns: 1fr; }
   .founder-message { grid-template-columns: 1fr; }
   .founder-photo { max-height: 460px; }
   .hero-panel, .panel, .sidebar-card { padding: 18px; }
+  .hero-title { font-size: 2rem; }
   .brand-name { font-size: 1.4rem; }
   .brand-tagline { font-size: 0.78rem; }
   .brand-block { min-width: auto; }
@@ -601,6 +606,28 @@ th { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-
     flex-basis: 100%;
     margin-left: 0;
     justify-content: flex-start;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    gap: 8px;
+    padding-bottom: 4px;
+    scrollbar-width: thin;
+  }
+  .topbar-actions .btn-ghost,
+  .topbar-actions .btn-primary,
+  .topbar-actions .btn-accent,
+  .topbar-actions .badge {
+    padding: 9px 12px;
+    font-size: .84rem;
+    flex: 0 0 auto;
+  }
+  .modal-backdrop { padding: 10px; align-items: start; }
+  .modal-card { width: 100%; max-height: 94vh; border-radius: 20px; }
+  .modal-content { padding: 20px; }
+  .storefront-hero { padding: 20px; }
+  .school-topnav,
+  .school-levelnav {
+    overflow-x: auto;
+    flex-wrap: nowrap;
   }
   .school-heading-row { flex-direction: column; align-items: stretch; }
   .attendance-option {

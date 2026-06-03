@@ -2599,10 +2599,10 @@ function renderTopbar() {
   banner.innerHTML = `<strong>${escapeHtml(site.banner)}</strong><span>${escapeHtml(site.subBanner)}</span>`;
   const publicNav = `
     <button class="btn-ghost" onclick="setScreen('landing')">Accueil</button>
-    <button class="btn-ghost" onclick="setScreen('schoolCatalog')">École Numérique</button>
-    <button class="btn-ghost" onclick="setScreen('proCatalog')">Formation Pro</button>
+    <button class="btn-ghost" onclick="setScreen('schoolCatalog')">École</button>
+    <button class="btn-ghost" onclick="setScreen('proCatalog')">Pro</button>
     <button class="btn-ghost" onclick="setScreen('about')">À propos</button>
-    <button class="btn-accent" onclick="setScreen('contact')">Contactez-nous</button>
+    <button class="btn-accent" onclick="setScreen('contact')">Contact</button>
   `;
   document.title = site.headline;
   if (!user) {
@@ -2638,10 +2638,25 @@ function renderPublicCourseCard(course) {
       <div class="progress"><span style="width:${Math.min(100, course.enrolledUserIds.length * 10)}%"></span></div>
       <div class="toolbar" style="justify-content:space-between">
         <span class="tiny">Enseignant : ${escapeHtml(teacher?.name || "Non assigné")}</span>
-        <button class="btn-ghost" onclick="showAuthModal('login')">Accéder</button>
+        <button class="btn-ghost" onclick="accessPublicCourse('${course.id}')">Accéder au cours</button>
       </div>
     </article>
   `;
+}
+
+function accessPublicCourse(courseId) {
+  const course = getCourseById(courseId);
+  const user = getCurrentUser();
+  if (!course) return;
+  if (!user) {
+    showAuthModal("register");
+    return;
+  }
+  if (canAccessCourse(user, course)) {
+    openCourse(courseId);
+    return;
+  }
+  purchaseCourse(courseId);
 }
 
 function formatPrice(value) {
@@ -5822,7 +5837,7 @@ async function processPayment(courseId, provider) {
   const user = getCurrentUser();
   const course = getCourseById(courseId);
   if (!user || !course) return;
-  if (provider === "manual" && !shouldUseApiPersistence()) {
+  if (provider === "manual") {
     const localPayment = upsertPaymentRecord({
       id: crypto.randomUUID(),
       provider: "manual",
@@ -7540,6 +7555,7 @@ window.setProCategory = setProCategory;
 window.handleImageFallback = handleImageFallback;
 window.openRecruitmentWhatsApp = openRecruitmentWhatsApp;
 window.openCourse = openCourse;
+window.accessPublicCourse = accessPublicCourse;
 window.openLessonResource = openLessonResource;
 window.openActivity = openActivity;
 window.selectModule = selectModule;
