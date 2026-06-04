@@ -3094,6 +3094,106 @@ function renderCatalogPage(type) {
         ${courses.map((course) => renderSellCard(course, type)).join("") || `<div class="empty-state">Aucun cours publié pour ce filtre. Ajoutez un cours ou choisissez un autre niveau.</div>`}
       </div>
     </section>
+    ${isSchool ? renderStudentSubscriptionPolicy(true) : ""}
+  `;
+}
+
+function renderTeacherCoursePolicy() {
+  return `
+    <section class="panel policy-panel">
+      <div class="policy-head">
+        <div>
+          <p class="eyebrow">Politique ADSL-2EF</p>
+          <h2 class="section-title">Création et gestion des cours numériques</h2>
+          <p class="section-subtitle">Règles de production, diffusion, ressources et rémunération des cours sur le LMS.</p>
+        </div>
+        <span class="badge warning">À respecter</span>
+      </div>
+      <div class="policy-grid">
+        <div class="policy-card"><strong>Cours partenaires</strong><p>Les enseignants partenaires peuvent proposer des cours. Les revenus sont répartis à 60% pour l'enseignant auteur et 40% pour ADSL-2EF.</p></div>
+        <div class="policy-card"><strong>Cours produits pour ADSL-2EF</strong><p>Les contenus réalisés dans un groupe de travail financé par ADSL-2EF sont rémunérés forfaitairement et deviennent propriété pédagogique d'ADSL-2EF.</p></div>
+        <div class="policy-card"><strong>Dépôt des ressources</strong><p>Vidéos, PDF, présentations, quiz, corrigés et banques de questions doivent être déposés dans les espaces de stockage officiels ADSL-2EF.</p></div>
+        <div class="policy-card"><strong>Organisation minimale</strong><p>Chaque cours doit comporter un plan, des supports, des activités, des évaluations, des quiz interactifs et des ressources complémentaires.</p></div>
+        <div class="policy-card"><strong>Reviens en Jeu</strong><p>Les quiz peuvent servir aux cours, aux révisions et aux compétitions. Les quiz financés par ADSL-2EF appartiennent à ADSL-2EF.</p></div>
+        <div class="policy-card"><strong>Continuité pédagogique</strong><p>ADSL-2EF conserve une copie des contenus pour assurer maintenance, sauvegarde, support et protection du patrimoine pédagogique.</p></div>
+      </div>
+    </section>
+  `;
+}
+
+function renderStudentSubscriptionPolicy(compact = false) {
+  return `
+    <section class="panel policy-panel ${compact ? "policy-panel-compact" : ""}">
+      <div class="policy-head">
+        <div>
+          <p class="eyebrow">Souscription apprenant</p>
+          <h2 class="section-title">Comment acheter et accéder aux cours</h2>
+          <p class="section-subtitle">Les inscriptions se font par paiement manuel WhatsApp ou par paiement électronique lorsque le service est activé.</p>
+        </div>
+        <span class="badge primary">Accès contrôlé</span>
+      </div>
+      <div class="policy-grid">
+        <div class="policy-card"><strong>1. Choisir le cours</strong><p>L'apprenant choisit un parcours publié dans l'École Numérique, le soutien scolaire, les langues, l'alphabétisation ou la formation adaptée.</p></div>
+        <div class="policy-card"><strong>2. Paiement manuel</strong><p>Le bouton WhatsApp prépare la demande. L'équipe confirme le montant, le moyen de paiement et active l'accès après validation.</p></div>
+        <div class="policy-card"><strong>3. Paiement électronique</strong><p>Mixx, Flooz ou PayGate peuvent être utilisés si l'intégration est active. L'accès est validé après confirmation du paiement.</p></div>
+        <div class="policy-card"><strong>4. Accès au LMS</strong><p>Après validation, l'apprenant se connecte, ouvre son cours et suit les leçons, ressources, devoirs, quiz et communications.</p></div>
+        <div class="policy-card"><strong>5. Suivi pédagogique</strong><p>La progression, les devoirs, l'assiduité et le cahier de textes app ADSL-2EF servent au suivi régulier de l'apprenant.</p></div>
+        <div class="policy-card"><strong>6. Règles d'usage</strong><p>Les contenus restent réservés aux inscrits. Le partage non autorisé des liens, supports ou comptes peut entraîner la suspension de l'accès.</p></div>
+      </div>
+    </section>
+  `;
+}
+
+function renderServiceShowcase() {
+  const services = [
+    {
+      title: "Soutien scolaire",
+      tag: "Collège · Lycée · Examens",
+      image: "https://images.unsplash.com/photo-1509062522246-3755977927d7?auto=format&fit=crop&w=1200&q=80",
+      text: "Un accompagnement régulier pour reprendre les bases, préparer les devoirs, renforcer les matières clés et progresser avec méthode.",
+      points: ["Suivi par cahier de textes app ADSL-2EF", "Devoirs, quiz et corrections", "Accompagnement présentiel ou en ligne"]
+    },
+    {
+      title: "Alphabétisation",
+      tag: "Jeunes · Adultes · Communauté",
+      image: "https://images.unsplash.com/photo-1497633762265-9d179a990aa6?auto=format&fit=crop&w=1200&q=80",
+      text: "Des parcours accessibles pour apprendre à lire, écrire, compter et utiliser le français pratique dans la vie quotidienne.",
+      points: ["Lecture et écriture", "Expression orale", "Progression adaptée au niveau"]
+    },
+    {
+      title: "Cours de langues",
+      tag: "Français · Anglais · Communication",
+      image: "https://images.unsplash.com/photo-1522202176988-66273c2fd55f?auto=format&fit=crop&w=1200&q=80",
+      text: "Des cours vivants pour communiquer avec confiance, renforcer l'oral, l'écrit et les compétences utiles aux études ou au travail.",
+      points: ["Langues de communication", "Ateliers pratiques", "Suivi des progrès"]
+    }
+  ];
+  return `
+    <section class="panel service-showcase">
+      <div class="toolbar" style="justify-content:space-between">
+        <div>
+          <p class="eyebrow">Offres éducatives ADSL-2EF</p>
+          <h2 class="section-title">Soutien scolaire, alphabétisation et cours de langues</h2>
+          <p class="section-subtitle">Des services clairs, attractifs et suivis pour accompagner les apprenants au quotidien.</p>
+        </div>
+        <button class="btn-accent" onclick="setScreen('contact')">Demander une orientation</button>
+      </div>
+      <div class="service-grid">
+        ${services.map((service) => `
+          <article class="service-card">
+            <img src="${escapeHtml(service.image)}" alt="${escapeHtml(service.title)}">
+            <div class="service-card-body">
+              <span class="badge ${service.title === "Soutien scolaire" ? "primary" : service.title === "Alphabétisation" ? "warning" : "success"}">${escapeHtml(service.tag)}</span>
+              <h3>${escapeHtml(service.title)}</h3>
+              <p class="meta">${escapeHtml(service.text)}</p>
+              <div class="selling-points">
+                ${service.points.map((point) => `<span class="selling-chip">${escapeHtml(point)}</span>`).join("")}
+              </div>
+            </div>
+          </article>
+        `).join("")}
+      </div>
+    </section>
   `;
 }
 
@@ -3111,7 +3211,7 @@ function renderContactPage() {
         <form id="contact-form" class="form-grid" style="margin-top:18px">
           <div class="field full"><label for="contact-name">Votre nom</label><input id="contact-name" name="name" required placeholder="Prénom Nom"></div>
           <div class="field full"><label for="contact-phone">Téléphone / WhatsApp</label><input id="contact-phone" name="phone" required placeholder="${escapeHtml(site.contactPhone)}"></div>
-          <div class="field full"><label for="contact-subject">Sujet</label><select id="contact-subject" name="subject"><option>Demande d'information</option><option>Inscription École Numérique</option><option>Alphabétisation & cours de langues</option><option>Inscription Formation Pro</option><option>Partenariat</option></select></div>
+          <div class="field full"><label for="contact-subject">Sujet</label><select id="contact-subject" name="subject"><option>Demande d'information</option><option>Soutien scolaire</option><option>Inscription École Numérique</option><option>Alphabétisation & cours de langues</option><option>Inscription Formation Pro</option><option>Partenariat</option></select></div>
           <div class="field full"><label for="contact-message">Votre message</label><textarea id="contact-message" name="message" required placeholder="Décrivez votre demande, vos besoins ou vos questions..."></textarea></div>
           <div class="field full"><button class="btn-accent" type="submit">Envoyer sur WhatsApp</button></div>
         </form>
@@ -3167,6 +3267,7 @@ function renderAboutPage() {
       <div class="panel">
         <h2 class="section-title">Notre mission</h2>
         <div class="simple-list" style="margin-top:18px">
+          <div class="module-card"><strong>Soutien scolaire</strong><div class="meta">Accompagner les élèves par matière, suivre les devoirs et organiser le travail avec le cahier de textes app ADSL-2EF.</div></div>
           <div class="module-card"><strong>École Numérique</strong><div class="meta">Structurer les cours par classe, niveau, discipline et objectif d'examen.</div></div>
           <div class="module-card"><strong>Formation Pro</strong><div class="meta">Accompagner les enseignants et responsables d'établissement avec des modules pratiques et certifiants.</div></div>
           <div class="module-card"><strong>Alphabétisation & langues</strong><div class="meta">Aider les jeunes et adultes à lire, écrire, communiquer et progresser dans la vie quotidienne ou professionnelle.</div></div>
@@ -3213,6 +3314,7 @@ function renderLanding() {
         <p class="eyebrow">Nos publics</p>
         <h3>Une offre structurée pour chaque profil d'apprenant</h3>
         <div class="simple-list">
+          <div class="module-card"><strong>Soutien scolaire</strong><div class="meta">Suivi des devoirs, renforcement par matière et cahier de textes app ADSL-2EF pour garder le cap.</div></div>
           <div class="module-card"><strong>Collège</strong><div class="meta">Parcours de renforcement et d'accompagnement préparés pour les classes du collège.</div></div>
           <div class="module-card"><strong>Lycée moderne et technique</strong><div class="meta">Cours organisés par filière avec supports, évaluations et préparation aux examens.</div></div>
           <div class="module-card"><strong>École pour adultes</strong><div class="meta">Préparation des candidats libres au BAC et au BEPC dans un cadre flexible et motivant.</div></div>
@@ -3221,6 +3323,7 @@ function renderLanding() {
         </div>
       </div>
     </section>
+    ${renderServiceShowcase()}
     <section id="catalog" class="panel">
       <div class="toolbar" style="justify-content:space-between">
         <div>
@@ -3231,9 +3334,9 @@ function renderLanding() {
       </div>
       <div class="quick-grid" style="margin-top:20px">
         <article class="quick-card quick-school">
-          <p class="eyebrow">École Numérique</p>
-          <h3>Collège, lycée moderne, technique et école pour adultes</h3>
-          <p class="meta">Une vitrine claire des offres scolaires avec catégories, prix, promesses pédagogiques et accès aux parcours.</p>
+          <p class="eyebrow">Soutien scolaire & École Numérique</p>
+          <h3>Renforcement, cours, devoirs et cahier de textes app</h3>
+          <p class="meta">Une vitrine claire des offres scolaires avec suivi pédagogique, catégories, prix, devoirs et accès aux parcours.</p>
           <button class="btn-primary" onclick="setScreen('schoolCatalog')">Ouvrir la page</button>
         </article>
         <article class="quick-card quick-literacy">
@@ -4366,6 +4469,7 @@ function renderStudentDashboard(user) {
         ${courses.length ? courses.map((course) => renderStudentCourseCard(course, user)).join("") : `<div class="empty-state">Aucun cours inscrit pour le moment.</div>`}
       </div>
     </section>
+    ${renderStudentSubscriptionPolicy(true)}
     <section class="dashboard-grid" style="margin-top:18px">
       <div class="panel">
         <h2 class="section-title">Activités à réaliser</h2>
@@ -4497,6 +4601,7 @@ function renderTeacherDashboard(user) {
       ${metricCard("À corriger", pendingReview.length, "Travaux en attente")}
       ${metricCard("Activités", state.activities.filter((activity) => activity.createdBy === user.id).length, "Quiz et devoirs")}
     </section>
+    ${renderTeacherCoursePolicy()}
     <section class="dashboard-grid">
       <div class="panel">
         <div class="toolbar" style="justify-content:space-between">

@@ -3,7 +3,7 @@
  * VERSION : 2.0.0
  */
 
-const CACHE_NAME = "adsl2ef-v5-game-qr";
+const CACHE_NAME = "adsl2ef-v6-policies-responsive";
 const OFFLINE_URL = "/offline.html";
 
 const PRECACHE_ASSETS = [
