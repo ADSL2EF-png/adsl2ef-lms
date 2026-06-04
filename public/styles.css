@@ -324,6 +324,14 @@ a { color: inherit; }
 .game-card {
   border-color: rgba(23,71,166,0.18);
 }
+.game-quiz-cover {
+  height: 150px;
+  margin-bottom: 16px;
+  border-radius: 18px;
+  background-size: cover;
+  background-position: center;
+  border: 1px solid rgba(23,71,166,.12);
+}
 .game-play-panel {
   max-width: 980px;
   margin: 0 auto;
@@ -385,6 +393,19 @@ a { color: inherit; }
   border-radius: 14px;
   background: #fff;
   border: 1px solid var(--line);
+}
+.game-qr-fallback {
+  width: 132px;
+  height: 132px;
+  place-items: center;
+  text-align: center;
+  border-radius: 14px;
+  background: #fff;
+  border: 2px dashed var(--primary);
+  color: var(--primary);
+  font-size: 1.35rem;
+  font-weight: 900;
+  letter-spacing: .12em;
 }
 .game-qr-card a {
   display: block;
@@ -916,6 +937,11 @@ th { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-
     flex-direction: column;
   }
   .game-qr-card img {
+    width: 180px;
+    height: 180px;
+    margin: 0 auto;
+  }
+  .game-qr-fallback {
     width: 180px;
     height: 180px;
     margin: 0 auto;

@@ -2496,12 +2496,30 @@ function goToDashboard() {
   window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-function openReviensEnJeu() {
+async function refreshGameStateFromBackend() {
+  if (shouldUseApiPersistence()) return await loadStateFromApi();
+  if (shouldUseSupabasePersistence()) {
+    try {
+      return await loadStateFromSupabase();
+    } catch (error) {
+      console.warn("Supabase game refresh ignored:", error);
+    }
+  }
+  return false;
+}
+
+async function openReviensEnJeu() {
   if (!getCurrentUser()) {
     showAuthModal("login");
     return;
   }
+  await refreshGameStateFromBackend();
   setScreen("game", { activeGameSessionId: null, activeGameQuizId: null });
+}
+
+async function refreshReviensEnJeu() {
+  await refreshGameStateFromBackend();
+  renderApp();
 }
 
 function getGameJoinUrl(code) {
@@ -2517,7 +2535,8 @@ function renderGameQrCode(code) {
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=12&data=${encodeURIComponent(joinUrl)}`;
   return `
     <div class="game-qr-card">
-      <img src="${escapeHtml(qrUrl)}" alt="QR code Reviens en Jeu ${escapeHtml(code)}">
+      <img src="${escapeHtml(qrUrl)}" alt="QR code Reviens en Jeu ${escapeHtml(code)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'">
+      <div class="game-qr-fallback" style="display:none">${escapeHtml(code)}</div>
       <div>
         <strong>Scanner pour rejoindre</strong>
         <div class="meta">Code : ${escapeHtml(code)}</div>
@@ -2525,6 +2544,32 @@ function renderGameQrCode(code) {
       </div>
     </div>
   `;
+}
+
+function getGameQuizImage(quiz) {
+  const title = String(quiz?.title || "Reviens en Jeu").slice(0, 42);
+  const subject = String(quiz?.subject || quiz?.className || quiz?.mode || "ADSL-2EF").slice(0, 24);
+  const hue = Array.from(title).reduce((sum, char) => sum + char.charCodeAt(0), 0) % 45;
+  const primary = hue % 2 ? "#1747a6" : "#0d2d6e";
+  const accent = hue % 3 ? "#e0a126" : "#2f7cf6";
+  const svg = `
+    <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675">
+      <defs>
+        <linearGradient id="g" x1="0" x2="1" y1="0" y2="1">
+          <stop stop-color="${primary}" offset="0"/>
+          <stop stop-color="${accent}" offset="1"/>
+        </linearGradient>
+      </defs>
+      <rect width="1200" height="675" fill="url(#g)"/>
+      <circle cx="990" cy="120" r="180" fill="rgba(255,255,255,.14)"/>
+      <circle cx="90" cy="590" r="220" fill="rgba(255,255,255,.10)"/>
+      <text x="72" y="105" fill="#fff3d9" font-family="Arial, sans-serif" font-size="34" font-weight="700" letter-spacing="6">REVIENS EN JEU</text>
+      <text x="72" y="320" fill="white" font-family="Georgia, serif" font-size="76" font-weight="700">${escapeHtml(title)}</text>
+      <text x="72" y="405" fill="rgba(255,255,255,.82)" font-family="Arial, sans-serif" font-size="38">${escapeHtml(subject)}</text>
+      <rect x="72" y="492" width="320" height="76" rx="38" fill="rgba(255,255,255,.92)"/>
+      <text x="112" y="542" fill="${primary}" font-family="Arial, sans-serif" font-size="30" font-weight="800">ADSL-2EF Quiz</text>
+    </svg>`;
+  return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
 
 function metricCard(label, value, trend) {
@@ -3762,6 +3807,7 @@ function renderGameQuizCard(quiz, user) {
   const sessions = state.gameSessions.filter((session) => session.quizId === quiz.id);
   return `
     <article class="activity-card game-card">
+      <div class="game-quiz-cover" style="background-image:url('${getGameQuizImage(quiz)}')"></div>
       <div class="toolbar" style="justify-content:space-between">
         <span class="badge primary">Reviens en Jeu</span>
         <span class="badge ${quiz.mode === "competition" ? "warning" : "success"}">${quiz.mode === "competition" ? "Compétition" : quiz.mode === "revision" ? "Révision" : "Entraînement"}</span>
@@ -3811,7 +3857,10 @@ function renderGameTeacherPage(user) {
           <h2 class="section-title">Mes quiz</h2>
           <p class="section-subtitle">Créez des quiz de cours, de révision ou de compétition en classe.</p>
         </div>
-        <button class="btn-primary" onclick="openGameQuizBuilder()">Créer un quiz</button>
+        <div class="toolbar">
+          <button class="btn-ghost" onclick="refreshReviensEnJeu()">Actualiser</button>
+          <button class="btn-primary" onclick="openGameQuizBuilder()">Créer un quiz</button>
+        </div>
       </div>
       <div class="course-grid" style="margin-top:18px">
         ${quizzes.length ? quizzes.map((quiz) => renderGameQuizCard(quiz, user)).join("") : `<div class="empty-state">Aucun quiz Reviens en Jeu pour le moment.</div>`}
@@ -3845,6 +3894,7 @@ function renderGameStudentPage(user) {
           <h2 class="section-title">Participer à un quiz</h2>
           <p class="section-subtitle">Entrez le code donné par l'enseignant, scannez le QR code, ou choisissez une partie ouverte.</p>
         </div>
+        <button class="btn-ghost" onclick="refreshReviensEnJeu()">Actualiser</button>
       </div>
       <form id="game-join-form" class="form-grid" style="margin-top:18px">
         <div class="field"><label for="game-code">Code de participation</label><input id="game-code" name="code" placeholder="Ex: A2EF9Q" required></div>
@@ -6417,6 +6467,7 @@ async function startRevisionSession(quizId) {
 async function handleGameJoin(event) {
   event.preventDefault();
   const code = String(new FormData(event.currentTarget).get("code") || "").trim();
+  await refreshGameStateFromBackend();
   const session = getGameSessionByCode(code);
   const user = getCurrentUser();
   if (!session || session.status === "finished") {
@@ -8273,6 +8324,7 @@ window.accessPublicCourse = accessPublicCourse;
 window.openLessonResource = openLessonResource;
 window.openActivity = openActivity;
 window.openReviensEnJeu = openReviensEnJeu;
+window.refreshReviensEnJeu = refreshReviensEnJeu;
 window.openGameSession = openGameSession;
 window.joinOpenGameSession = joinOpenGameSession;
 window.openGameQuizBuilder = openGameQuizBuilder;
