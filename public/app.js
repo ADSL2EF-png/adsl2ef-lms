@@ -114,7 +114,11 @@ const starterData = {
       contactPhone: "+228 93 76 76 21",
       contactEmail: "contact@adsl2ef.tg",
       contactAddress: "Lomé, République Togolaise",
-      whatsappUrl: "https://wa.me/22893767621"
+      whatsappUrl: "https://wa.me/22893767621",
+      facebookUrl: "https://www.facebook.com/adsl.formation.tg",
+      linkedinUrl: "https://www.linkedin.com/company/adsl-2ef/",
+      tiktokFounderUrl: "https://www.tiktok.com/@pinida.adjagba",
+      tiktokUrl: "https://www.tiktok.com/@adsl2ef"
     },
     payments: {
       mixxEnabled: true,
@@ -3221,6 +3225,41 @@ function renderServiceShowcase() {
   `;
 }
 
+function getSocialLinks() {
+  const site = state.config.site || {};
+  return [
+    { label: "Facebook", url: site.facebookUrl || "https://www.facebook.com/adsl.formation.tg" },
+    { label: "LinkedIn", url: site.linkedinUrl || "https://www.linkedin.com/company/adsl-2ef/" },
+    { label: "TikTok ADSL-2EF", url: site.tiktokUrl || "https://www.tiktok.com/@adsl2ef" },
+    { label: "TikTok Promoteur", url: site.tiktokFounderUrl || "https://www.tiktok.com/@pinida.adjagba" }
+  ].filter((item) => String(item.url || "").trim());
+}
+
+function renderSocialLinks(className = "social-links") {
+  return `
+    <div class="${className}">
+      ${getSocialLinks().map((item) => `<a href="${escapeHtml(item.url)}" target="_blank" rel="noreferrer">${escapeHtml(item.label)}</a>`).join("")}
+    </div>
+  `;
+}
+
+function renderSiteFooter() {
+  const site = state.config.site || {};
+  return `
+    <footer class="site-footer">
+      <div>
+        <strong>ADSL-2EF</strong>
+        <p>Excellence éducative · Togo</p>
+      </div>
+      ${renderSocialLinks()}
+      <div class="footer-contact">
+        <a href="${escapeHtml(site.whatsappUrl || "https://wa.me/22893767621")}" target="_blank" rel="noreferrer">WhatsApp</a>
+        <button type="button" onclick="setScreen('contact')">Contact</button>
+      </div>
+    </footer>
+  `;
+}
+
 function renderContactPage() {
   const site = state.config.site;
   return `
@@ -3245,6 +3284,7 @@ function renderContactPage() {
         <div class="simple-list" style="margin-top:18px">
           <div class="module-card"><strong>Adresse</strong><div class="meta">${escapeHtml(site.contactAddress)}</div></div>
           <div class="module-card"><strong>WhatsApp</strong><div class="meta">${escapeHtml(site.contactPhone)}</div></div>
+          <div class="module-card"><strong>Réseaux sociaux</strong>${renderSocialLinks("social-links contact-social-links")}</div>
           <div class="module-card"><strong>Heures de réponse</strong><div class="meta">Lun-Sam : 7h00 - 20h00 · Dim : 9h00 - 18h00</div></div>
         </div>
         <div class="toolbar" style="margin-top:20px">
@@ -5546,6 +5586,7 @@ function renderApp() {
   else if (state.ui.screen === "activity") app.innerHTML = renderActivityWorkspace(user);
   else if (state.ui.screen === "landing") app.innerHTML = renderLanding();
   else app.innerHTML = renderDashboard(user);
+  app.innerHTML += renderSiteFooter();
   bindForms();
 }
 
@@ -5983,6 +6024,10 @@ function openPlatformSettings() {
       <div class="field"><label for="site-email">Email</label><input id="site-email" name="siteEmail" value="${escapeHtml(site.contactEmail)}"></div>
       <div class="field full"><label for="site-address">Adresse</label><input id="site-address" name="siteAddress" value="${escapeHtml(site.contactAddress)}"></div>
       <div class="field full"><label for="site-whatsapp">Lien WhatsApp</label><input id="site-whatsapp" name="siteWhatsapp" value="${escapeHtml(site.whatsappUrl)}"></div>
+      <div class="field full"><label for="site-facebook">Facebook</label><input id="site-facebook" name="siteFacebook" value="${escapeHtml(site.facebookUrl || "")}"></div>
+      <div class="field full"><label for="site-linkedin">LinkedIn</label><input id="site-linkedin" name="siteLinkedin" value="${escapeHtml(site.linkedinUrl || "")}"></div>
+      <div class="field full"><label for="site-tiktok">TikTok ADSL-2EF</label><input id="site-tiktok" name="siteTiktok" value="${escapeHtml(site.tiktokUrl || "")}"></div>
+      <div class="field full"><label for="site-tiktok-founder">TikTok Promoteur</label><input id="site-tiktok-founder" name="siteTiktokFounder" value="${escapeHtml(site.tiktokFounderUrl || "")}"></div>
       <div class="field"><label for="mixx-enabled">Mixx by Yas</label><select id="mixx-enabled" name="mixxEnabled"><option value="true" ${payments.mixxEnabled ? "selected" : ""}>Activé</option><option value="false" ${!payments.mixxEnabled ? "selected" : ""}>Désactivé</option></select></div>
       <div class="field"><label for="flooz-enabled">Flooz</label><select id="flooz-enabled" name="floozEnabled"><option value="true" ${payments.floozEnabled ? "selected" : ""}>Activé</option><option value="false" ${!payments.floozEnabled ? "selected" : ""}>Désactivé</option></select></div>
       <div class="field"><label for="paygate-enabled">PayGate Global</label><select id="paygate-enabled" name="paygateEnabled"><option value="true" ${payments.paygateEnabled ? "selected" : ""}>Activé</option><option value="false" ${!payments.paygateEnabled ? "selected" : ""}>Désactivé</option></select></div>
@@ -8733,6 +8778,10 @@ function handleSettingsSave(event) {
   state.config.site.contactEmail = String(formData.get("siteEmail")).trim();
   state.config.site.contactAddress = String(formData.get("siteAddress")).trim();
   state.config.site.whatsappUrl = String(formData.get("siteWhatsapp")).trim();
+  state.config.site.facebookUrl = String(formData.get("siteFacebook") || "").trim();
+  state.config.site.linkedinUrl = String(formData.get("siteLinkedin") || "").trim();
+  state.config.site.tiktokUrl = String(formData.get("siteTiktok") || "").trim();
+  state.config.site.tiktokFounderUrl = String(formData.get("siteTiktokFounder") || "").trim();
   state.config.payments.mixxEnabled = String(formData.get("mixxEnabled")) === "true";
   state.config.payments.floozEnabled = String(formData.get("floozEnabled")) === "true";
   state.config.payments.paygateEnabled = String(formData.get("paygateEnabled")) === "true";
