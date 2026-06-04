@@ -3,7 +3,7 @@
  * VERSION : 2.0.0
  */
 
-const CACHE_NAME = "adsl2ef-v4";
+const CACHE_NAME = "adsl2ef-v5-game-qr";
 const OFFLINE_URL = "/offline.html";
 
 const PRECACHE_ASSETS = [
@@ -63,8 +63,9 @@ self.addEventListener("fetch", function (event) {
   const isNetworkFirstPath = NETWORK_FIRST_PATHS.some((path) =>
     url.pathname.startsWith(path)
   );
+  const isHtmlNavigation = event.request.mode === "navigate" || event.request.headers.get("Accept")?.includes("text/html");
 
-  if (isNetworkFirstDomain || isNetworkFirstPath) {
+  if (isHtmlNavigation || isNetworkFirstDomain || isNetworkFirstPath) {
     event.respondWith(networkFirst(event.request));
     return;
   }

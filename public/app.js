@@ -2526,13 +2526,152 @@ function getGameJoinUrl(code) {
   return url.toString();
 }
 
+function gfMul(a, b) {
+  let result = 0;
+  while (b) {
+    if (b & 1) result ^= a;
+    a <<= 1;
+    if (a & 0x100) a ^= 0x11d;
+    b >>= 1;
+  }
+  return result;
+}
+
+function getQrGeneratorPolynomial(degree) {
+  let result = [1];
+  let root = 1;
+  for (let i = 0; i < degree; i += 1) {
+    const next = new Array(result.length + 1).fill(0);
+    result.forEach((coef, index) => {
+      next[index] ^= gfMul(coef, root);
+      next[index + 1] ^= coef;
+    });
+    result = next;
+    root = gfMul(root, 2);
+  }
+  return result.slice(1);
+}
+
+function getQrErrorCorrection(data, degree) {
+  const generator = getQrGeneratorPolynomial(degree);
+  const result = new Array(degree).fill(0);
+  data.forEach((value) => {
+    const factor = value ^ result.shift();
+    result.push(0);
+    generator.forEach((coef, index) => {
+      result[index] ^= gfMul(coef, factor);
+    });
+  });
+  return result;
+}
+
+function getQrFormatBits(mask) {
+  let data = (1 << 3) | mask;
+  let bits = data << 10;
+  for (let i = 14; i >= 10; i -= 1) {
+    if ((bits >>> i) & 1) bits ^= 0x537 << (i - 10);
+  }
+  return ((data << 10) | bits) ^ 0x5412;
+}
+
+function createGameQrSvg(text) {
+  const version = 5;
+  const size = 21 + (version - 1) * 4;
+  const dataCodewords = 108;
+  const eccCodewords = 26;
+  const modules = Array.from({ length: size }, () => Array(size).fill(false));
+  const reserved = Array.from({ length: size }, () => Array(size).fill(false));
+  const setModule = (row, col, value, reserve = true) => {
+    if (row < 0 || col < 0 || row >= size || col >= size) return;
+    modules[row][col] = Boolean(value);
+    if (reserve) reserved[row][col] = true;
+  };
+  const drawFinder = (row, col) => {
+    for (let y = -1; y <= 7; y += 1) {
+      for (let x = -1; x <= 7; x += 1) {
+        const yy = row + y;
+        const xx = col + x;
+        const black = x >= 0 && x <= 6 && y >= 0 && y <= 6 && (x === 0 || x === 6 || y === 0 || y === 6 || (x >= 2 && x <= 4 && y >= 2 && y <= 4));
+        setModule(yy, xx, black);
+      }
+    }
+  };
+  const drawAlignment = (row, col) => {
+    for (let y = -2; y <= 2; y += 1) {
+      for (let x = -2; x <= 2; x += 1) {
+        setModule(row + y, col + x, Math.max(Math.abs(x), Math.abs(y)) !== 1);
+      }
+    }
+  };
+  drawFinder(0, 0);
+  drawFinder(0, size - 7);
+  drawFinder(size - 7, 0);
+  drawAlignment(30, 30);
+  for (let i = 8; i < size - 8; i += 1) {
+    setModule(6, i, i % 2 === 0);
+    setModule(i, 6, i % 2 === 0);
+  }
+  setModule(size - 8, 8, true);
+  for (let i = 0; i < 9; i += 1) {
+    if (i !== 6) {
+      reserved[8][i] = true;
+      reserved[i][8] = true;
+    }
+  }
+  for (let i = size - 8; i < size; i += 1) {
+    reserved[8][i] = true;
+    reserved[i][8] = true;
+  }
+
+  const bytes = Array.from(new TextEncoder().encode(text)).slice(0, dataCodewords - 3);
+  const bits = [0, 1, 0, 0];
+  for (let i = 7; i >= 0; i -= 1) bits.push((bytes.length >>> i) & 1);
+  bytes.forEach((byte) => {
+    for (let i = 7; i >= 0; i -= 1) bits.push((byte >>> i) & 1);
+  });
+  while (bits.length < dataCodewords * 8 && bits.length % 8 !== 0) bits.push(0);
+  const data = [];
+  for (let i = 0; i < bits.length; i += 8) data.push(parseInt(bits.slice(i, i + 8).join(""), 2));
+  for (let pad = 0; data.length < dataCodewords; pad += 1) data.push(pad % 2 === 0 ? 0xec : 0x11);
+  const codewords = data.concat(getQrErrorCorrection(data, eccCodewords));
+  const codeBits = codewords.flatMap((byte) => Array.from({ length: 8 }, (_, index) => (byte >>> (7 - index)) & 1));
+
+  let bitIndex = 0;
+  let direction = -1;
+  for (let col = size - 1; col > 0; col -= 2) {
+    if (col === 6) col -= 1;
+    for (let scan = 0; scan < size; scan += 1) {
+      const row = direction === -1 ? size - 1 - scan : scan;
+      for (let offset = 0; offset < 2; offset += 1) {
+        const x = col - offset;
+        if (reserved[row][x]) continue;
+        const mask = (row + x) % 2 === 0;
+        modules[row][x] = Boolean((codeBits[bitIndex] || 0) ^ mask);
+        bitIndex += 1;
+      }
+    }
+    direction *= -1;
+  }
+
+  const format = getQrFormatBits(0);
+  for (let i = 0; i <= 5; i += 1) setModule(8, i, (format >>> i) & 1);
+  setModule(8, 7, (format >>> 6) & 1);
+  setModule(8, 8, (format >>> 7) & 1);
+  setModule(7, 8, (format >>> 8) & 1);
+  for (let i = 9; i < 15; i += 1) setModule(14 - i, 8, (format >>> i) & 1);
+  for (let i = 0; i < 8; i += 1) setModule(size - 1 - i, 8, (format >>> i) & 1);
+  for (let i = 8; i < 15; i += 1) setModule(8, size - 15 + i, (format >>> i) & 1);
+
+  const rects = modules.flatMap((row, y) => row.map((value, x) => value ? `<rect x="${x}" y="${y}" width="1" height="1"/>` : "")).join("");
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${size + 8} ${size + 8}" role="img" aria-label="QR code Reviens en Jeu"><rect width="100%" height="100%" fill="#fff"/><g transform="translate(4 4)" fill="#0d2d6e">${rects}</g></svg>`;
+}
+
 function renderGameQrCode(code) {
   const joinUrl = getGameJoinUrl(code);
-  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=12&data=${encodeURIComponent(joinUrl)}`;
+  const qrUrl = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(createGameQrSvg(joinUrl))}`;
   return `
     <div class="game-qr-card">
-      <img src="${escapeHtml(qrUrl)}" alt="QR code Reviens en Jeu ${escapeHtml(code)}" loading="lazy" referrerpolicy="no-referrer" onerror="this.style.display='none';this.nextElementSibling.style.display='grid'">
-      <div class="game-qr-fallback" style="display:none">${escapeHtml(code)}</div>
+      <img src="${escapeHtml(qrUrl)}" alt="QR code Reviens en Jeu ${escapeHtml(code)}" loading="lazy">
       <div>
         <strong>Scanner pour rejoindre</strong>
         <div class="meta">Code : ${escapeHtml(code)}</div>
@@ -3932,6 +4071,7 @@ function renderGameQuizDetail(user) {
   if (!quiz) return `<section class="panel"><div class="empty-state">Quiz introuvable.</div></section>`;
   const course = getCourseById(quiz.courseId);
   const openSessions = state.gameSessions.filter((session) => session.quizId === quiz.id && session.status !== "finished");
+  const canPreviewQuestions = user && (user.role === "teacher" || user.role === "admin");
   return `
     <section class="panel">
       <div class="toolbar" style="justify-content:space-between">
@@ -3965,12 +4105,22 @@ function renderGameQuizDetail(user) {
           <div class="module-card"><strong>Résultat final</strong><div class="meta">À la fin, vous voyez votre score et le classement.</div></div>
         </div>
       </div>
-      <div class="panel">
-        <h3>Aperçu des questions</h3>
-        <div class="simple-list" style="margin-top:12px">
-          ${quiz.questions.length ? quiz.questions.slice(0, 5).map((question, index) => `<div class="module-card"><strong>Question ${index + 1}</strong><div class="meta">${escapeHtml(question.prompt)}</div><div class="tiny">${question.durationSeconds || 30}s · ${question.points || 10} pts</div></div>`).join("") : `<div class="empty-state">Les questions seront ajoutées par l'enseignant.</div>`}
+      ${canPreviewQuestions ? `
+        <div class="panel">
+          <h3>Aperçu des questions</h3>
+          <div class="simple-list" style="margin-top:12px">
+            ${quiz.questions.length ? quiz.questions.slice(0, 5).map((question, index) => `<div class="module-card"><strong>Question ${index + 1}</strong><div class="meta">${escapeHtml(question.prompt)}</div><div class="tiny">${question.durationSeconds || 30}s · ${question.points || 10} pts</div></div>`).join("") : `<div class="empty-state">Les questions seront ajoutées par l'enseignant.</div>`}
+          </div>
         </div>
-      </div>
+      ` : `
+        <div class="panel">
+          <h3>Prêt à jouer ?</h3>
+          <div class="simple-list" style="margin-top:12px">
+            <div class="module-card"><strong>Connectez-vous au moment du jeu</strong><div class="meta">Les questions s'affichent seulement pendant la partie.</div></div>
+            <div class="module-card"><strong>Choisissez une partie ouverte</strong><div class="meta">Utilisez le bouton de participation ou le code donné par l'enseignant.</div></div>
+          </div>
+        </div>
+      `}
     </section>
   `;
 }
