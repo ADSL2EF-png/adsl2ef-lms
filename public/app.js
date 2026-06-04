@@ -2509,10 +2509,6 @@ async function refreshGameStateFromBackend() {
 }
 
 async function openReviensEnJeu() {
-  if (!getCurrentUser()) {
-    showAuthModal("login");
-    return;
-  }
   await refreshGameStateFromBackend();
   setScreen("game", { activeGameSessionId: null, activeGameQuizId: null });
 }
@@ -3842,7 +3838,7 @@ function renderGameSessionCard(session, user) {
         <span class="badge ${session.status === "finished" ? "success" : "warning"}">${session.status === "finished" ? "Terminé" : "Ouvert"}</span>
       </div>
       <div class="toolbar" style="margin-top:12px">
-        <button class="${user.role === "student" && session.status !== "finished" ? "btn-primary" : "btn-ghost"}" onclick="${user.role === "student" && session.status !== "finished" ? `joinOpenGameSession('${session.id}')` : `openGameSession('${session.id}')`}">${user.role === "student" && session.status !== "finished" ? "Jouer" : "Voir"}</button>
+        <button class="${user?.role === "student" && session.status !== "finished" ? "btn-primary" : "btn-ghost"}" onclick="${user?.role === "student" && session.status !== "finished" ? `joinOpenGameSession('${session.id}')` : user ? `openGameSession('${session.id}')` : `showAuthModal('login')`}">${user?.role === "student" && session.status !== "finished" ? "Jouer" : user ? "Voir" : "Se connecter"}</button>
         ${canManageGameQuiz(user, quiz) && session.status !== "finished" ? `<button class="btn-primary" onclick="finishGameSession('${session.id}')">Terminer et podium</button>` : ""}
       </div>
       ${ranking.length ? `<div class="tiny" style="margin-top:10px">Leader : ${escapeHtml(ranking[0].name)} · ${ranking[0].score} pts</div>` : ""}
@@ -4043,6 +4039,7 @@ function renderGameResults(session, quiz, user) {
 
 function renderReviensEnJeuPage(user) {
   if (state.ui.activeGameSessionId) return renderGameSessionPage(user);
+  if (!user) return state.ui.activeGameQuizId ? renderGameQuizDetail(user) : renderGameStudentPage(user);
   if (state.ui.activeGameQuizId && user.role === "student") return renderGameQuizDetail(user);
   return user.role === "student" ? renderGameStudentPage(user) : renderGameTeacherPage(user);
 }
@@ -5181,10 +5178,10 @@ function renderApp() {
   else if (state.ui.screen === "about") app.innerHTML = renderAboutPage();
   else if (state.ui.screen === "schoolCatalog") app.innerHTML = renderCatalogPage("school");
   else if (state.ui.screen === "proCatalog") app.innerHTML = renderCatalogPage("pro");
+  else if (state.ui.screen === "game") app.innerHTML = renderReviensEnJeuPage(user);
   else if (!user) app.innerHTML = renderLanding();
   else if (state.ui.screen === "course") app.innerHTML = renderCourseWorkspace(user);
   else if (state.ui.screen === "activity") app.innerHTML = renderActivityWorkspace(user);
-  else if (state.ui.screen === "game") app.innerHTML = renderReviensEnJeuPage(user);
   else if (state.ui.screen === "landing") app.innerHTML = renderLanding();
   else app.innerHTML = renderDashboard(user);
   bindForms();
@@ -6511,7 +6508,12 @@ async function startGameSession(quizId) {
 async function startRevisionSession(quizId) {
   const quiz = getGameQuizById(quizId);
   const user = getCurrentUser();
-  if (!quiz || !user || user.role !== "student") return;
+  if (!quiz) return;
+  if (!user) {
+    showAuthModal("login");
+    return;
+  }
+  if (user.role !== "student") return;
   const session = {
     id: crypto.randomUUID(),
     quizId,
@@ -6535,6 +6537,10 @@ async function handleGameJoin(event) {
   await refreshGameStateFromBackend();
   const session = getGameSessionByCode(code);
   const user = getCurrentUser();
+  if (!user) {
+    showAuthModal("login");
+    return;
+  }
   if (!session || session.status === "finished") {
     openModal(`<h2>Code invalide</h2><p class="section-subtitle">Vérifiez le code donné par l'enseignant.</p>`);
     return;
