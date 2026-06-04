@@ -2497,7 +2497,34 @@ function goToDashboard() {
 }
 
 function openReviensEnJeu() {
+  if (!getCurrentUser()) {
+    showAuthModal("login");
+    return;
+  }
   setScreen("game", { activeGameSessionId: null, activeGameQuizId: null });
+}
+
+function getGameJoinUrl(code) {
+  const url = new URL(window.location.href);
+  url.search = "";
+  url.hash = "";
+  url.searchParams.set("joinGame", code);
+  return url.toString();
+}
+
+function renderGameQrCode(code) {
+  const joinUrl = getGameJoinUrl(code);
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&margin=12&data=${encodeURIComponent(joinUrl)}`;
+  return `
+    <div class="game-qr-card">
+      <img src="${escapeHtml(qrUrl)}" alt="QR code Reviens en Jeu ${escapeHtml(code)}">
+      <div>
+        <strong>Scanner pour rejoindre</strong>
+        <div class="meta">Code : ${escapeHtml(code)}</div>
+        <a class="tiny" href="${escapeHtml(joinUrl)}" target="_blank" rel="noreferrer">${escapeHtml(joinUrl)}</a>
+      </div>
+    </div>
+  `;
 }
 
 function metricCard(label, value, trend) {
@@ -2612,6 +2639,7 @@ function renderTopbar() {
     <button class="btn-ghost" onclick="setScreen('landing')">Accueil</button>
     <button class="btn-ghost" onclick="setScreen('schoolCatalog')">École</button>
     <button class="btn-ghost" onclick="setScreen('proCatalog')">Pro</button>
+    <button class="btn-ghost" onclick="openReviensEnJeu()">Reviens en Jeu</button>
     <button class="btn-ghost" onclick="setScreen('about')">À propos</button>
     <button class="btn-accent" onclick="setScreen('contact')">Contact</button>
   `;
@@ -3764,7 +3792,7 @@ function renderGameSessionCard(session, user) {
         <span class="badge ${session.status === "finished" ? "success" : "warning"}">${session.status === "finished" ? "Terminé" : "Ouvert"}</span>
       </div>
       <div class="toolbar" style="margin-top:12px">
-        <button class="btn-ghost" onclick="openGameSession('${session.id}')">Voir</button>
+        <button class="${user.role === "student" && session.status !== "finished" ? "btn-primary" : "btn-ghost"}" onclick="${user.role === "student" && session.status !== "finished" ? `joinOpenGameSession('${session.id}')` : `openGameSession('${session.id}')`}">${user.role === "student" && session.status !== "finished" ? "Jouer" : "Voir"}</button>
         ${canManageGameQuiz(user, quiz) && session.status !== "finished" ? `<button class="btn-primary" onclick="finishGameSession('${session.id}')">Terminer et podium</button>` : ""}
       </div>
       ${ranking.length ? `<div class="tiny" style="margin-top:10px">Leader : ${escapeHtml(ranking[0].name)} · ${ranking[0].score} pts</div>` : ""}
@@ -3808,14 +3836,14 @@ function renderGameTeacherPage(user) {
 
 function renderGameStudentPage(user) {
   const openSessions = state.gameSessions.filter((session) => session.status !== "finished");
-  const revisionQuizzes = state.gameQuizzes.filter((quiz) => quiz.status === "published" && (quiz.mode === "revision" || !quiz.courseId));
+  const revisionQuizzes = state.gameQuizzes.filter((quiz) => quiz.status === "published");
   return `
     <section class="panel">
       <div class="toolbar" style="justify-content:space-between">
         <div>
           <p class="eyebrow">Reviens en Jeu</p>
           <h2 class="section-title">Participer à un quiz</h2>
-          <p class="section-subtitle">Entrez le code donné par l'enseignant ou lancez un quiz de révision.</p>
+          <p class="section-subtitle">Entrez le code donné par l'enseignant, scannez le QR code, ou choisissez une partie ouverte.</p>
         </div>
       </div>
       <form id="game-join-form" class="form-grid" style="margin-top:18px">
@@ -3825,12 +3853,13 @@ function renderGameStudentPage(user) {
     </section>
     <section class="dashboard-grid" style="margin-top:18px">
       <div class="panel">
-        <h2 class="section-title">Sessions ouvertes</h2>
-        <div class="simple-list" style="margin-top:18px">${openSessions.length ? openSessions.slice(0, 5).map((session) => renderGameSessionCard(session, user)).join("") : `<div class="empty-state">Aucune compétition ouverte pour le moment.</div>`}</div>
+        <h2 class="section-title">Compétitions ouvertes</h2>
+        <div class="simple-list" style="margin-top:18px">${openSessions.length ? openSessions.map((session) => renderGameSessionCard(session, user)).join("") : `<div class="empty-state">Aucune compétition ouverte pour le moment.</div>`}</div>
       </div>
       <div class="panel">
-        <h2 class="section-title">Révision libre</h2>
-        <div class="course-grid" style="margin-top:18px">${revisionQuizzes.length ? revisionQuizzes.map((quiz) => renderGameQuizCard(quiz, user)).join("") : `<div class="empty-state">Aucun quiz de révision disponible.</div>`}</div>
+        <h2 class="section-title">Tous les Reviens en Jeu</h2>
+        <p class="section-subtitle">Choisissez un quiz créé par les enseignants pour vous exercer.</p>
+        <div class="course-grid" style="margin-top:18px">${revisionQuizzes.length ? revisionQuizzes.map((quiz) => renderGameQuizCard(quiz, user)).join("") : `<div class="empty-state">Aucun quiz disponible.</div>`}</div>
       </div>
     </section>
   `;
@@ -3883,6 +3912,7 @@ function renderGameResults(session, quiz, user) {
       </div>
       <p class="eyebrow">Reviens en Jeu</p>
       <h2 class="section-title">${escapeHtml(quiz.title)}</h2>
+      ${canManageGameQuiz(user, quiz) && session.status !== "finished" ? renderGameQrCode(session.code) : ""}
       <div class="podium-grid" style="margin-top:18px">
         ${podium.map((item, index) => `<div class="podium-card rank-${index + 1}"><strong>${index + 1}</strong><h3>${escapeHtml(item.name)}</h3><p>${item.score} pts</p></div>`).join("") || `<div class="empty-state">Aucun participant classé.</div>`}
       </div>
@@ -6401,6 +6431,22 @@ async function handleGameJoin(event) {
   openGameSession(session.id);
 }
 
+async function joinOpenGameSession(sessionId) {
+  const session = getGameSessionById(sessionId);
+  const user = getCurrentUser();
+  if (!user) {
+    showAuthModal("login");
+    return;
+  }
+  if (!session || session.status === "finished") return;
+  if (!session.participants.some((item) => item.userId === user.id)) {
+    session.participants.push({ userId: user.id, name: user.name, answers: [], joinedAt: nowISO(), currentQuestionStartedAt: Date.now() });
+    await publishPlatformEvent("game.session.joined", { sessionId: session.id, participant: session.participants[session.participants.length - 1] });
+  }
+  saveState();
+  openGameSession(session.id);
+}
+
 async function handleGameAnswerSubmit(event) {
   event.preventDefault();
   const session = getGameSessionById(event.currentTarget.dataset.sessionId);
@@ -8191,6 +8237,24 @@ async function initializeApp() {
     remoteLoaded = await loadCoursesFromJsonBin();
   }
   if (remoteLoaded) renderApp();
+  const joinCode = new URLSearchParams(window.location.search).get("joinGame");
+  if (joinCode) {
+    const user = getCurrentUser();
+    if (!user) {
+      showAuthModal("login");
+    } else {
+      state.ui.screen = "game";
+      const session = getGameSessionByCode(joinCode);
+      if (session) {
+        state.ui.activeGameSessionId = session.id;
+        if (session.status !== "finished" && !session.participants.some((item) => item.userId === user.id)) {
+          session.participants.push({ userId: user.id, name: user.name, answers: [], joinedAt: nowISO(), currentQuestionStartedAt: Date.now() });
+          await publishPlatformEvent("game.session.joined", { sessionId: session.id, participant: session.participants[session.participants.length - 1] });
+        }
+      }
+      saveState();
+    }
+  }
 }
 
 initializeApp();
@@ -8208,6 +8272,16 @@ window.openCourse = openCourse;
 window.accessPublicCourse = accessPublicCourse;
 window.openLessonResource = openLessonResource;
 window.openActivity = openActivity;
+window.openReviensEnJeu = openReviensEnJeu;
+window.openGameSession = openGameSession;
+window.joinOpenGameSession = joinOpenGameSession;
+window.openGameQuizBuilder = openGameQuizBuilder;
+window.openGameQuizEditor = openGameQuizEditor;
+window.openGameQuestionBuilder = openGameQuestionBuilder;
+window.startGameSession = startGameSession;
+window.startRevisionSession = startRevisionSession;
+window.finishGameSession = finishGameSession;
+window.removeGameQuiz = removeGameQuiz;
 window.selectModule = selectModule;
 window.selectLesson = selectLesson;
 window.toggleModuleRelease = toggleModuleRelease;
