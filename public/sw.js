@@ -3,7 +3,7 @@
  * VERSION : 2.0.0
  */
 
-const CACHE_NAME = "adsl2ef-v6-policies-responsive";
+const CACHE_NAME = "adsl2ef-v7-teacher-game-catalog";
 const OFFLINE_URL = "/offline.html";
 
 const PRECACHE_ASSETS = [

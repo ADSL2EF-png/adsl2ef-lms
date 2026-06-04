@@ -4090,8 +4090,23 @@ function renderGameSessionCard(session, user) {
 
 function renderGameTeacherPage(user) {
   const quizzes = state.gameQuizzes.filter((quiz) => user.role === "admin" || quiz.createdBy === user.id);
+  const publishedQuizzes = state.gameQuizzes.filter((quiz) => quiz.status === "published");
+  const otherPublishedQuizzes = publishedQuizzes.filter((quiz) => user.role === "admin" || quiz.createdBy !== user.id);
+  const openSessions = state.gameSessions.filter((session) => session.status !== "finished");
   const sessions = state.gameSessions.filter((session) => quizzes.some((quiz) => quiz.id === session.quizId)).slice(0, 6);
   return `
+    <section class="game-intro">
+      <div>
+        <p class="eyebrow">Reviens en Jeu</p>
+        <h2>Créer, lancer et rejoindre les quiz</h2>
+        <p>Les enseignants peuvent créer leurs propres quiz, lancer une compétition en classe, mais aussi consulter les autres Reviens en Jeu publiés pour réviser, tester ou s'inspirer.</p>
+      </div>
+      <div class="game-how-grid">
+        <div class="module-card"><strong>Mes quiz</strong><div class="meta">Création, modification et lancement de sessions.</div></div>
+        <div class="module-card"><strong>Catalogue publié</strong><div class="meta">Tous les quiz disponibles sur la plateforme.</div></div>
+        <div class="module-card"><strong>Sessions ouvertes</strong><div class="meta">Accès rapide aux parties en cours.</div></div>
+      </div>
+    </section>
     <section class="panel">
       <div class="toolbar" style="justify-content:space-between">
         <div>
@@ -4106,6 +4121,20 @@ function renderGameTeacherPage(user) {
       </div>
       <div class="course-grid" style="margin-top:18px">
         ${quizzes.length ? quizzes.map((quiz) => renderGameQuizCard(quiz, user)).join("") : `<div class="empty-state">Aucun quiz Reviens en Jeu pour le moment.</div>`}
+      </div>
+    </section>
+    <section class="dashboard-grid" style="margin-top:18px">
+      <div class="panel">
+        <h2 class="section-title">Tous les Reviens en Jeu publiés</h2>
+        <p class="section-subtitle">Retrouvez ici les quiz publiés par les enseignants. Un enseignant peut les consulter et rejoindre une session ouverte.</p>
+        <div class="course-grid" style="margin-top:18px">
+          ${otherPublishedQuizzes.length ? otherPublishedQuizzes.map((quiz) => renderGameQuizCard(quiz, user)).join("") : `<div class="empty-state">Aucun autre quiz publié pour le moment.</div>`}
+        </div>
+      </div>
+      <div class="panel">
+        <h2 class="section-title">Parties ouvertes</h2>
+        <p class="section-subtitle">Les compétitions lancées apparaissent ici avec leur code.</p>
+        <div class="simple-list" style="margin-top:18px">${openSessions.length ? openSessions.map((session) => renderGameSessionCard(session, user)).join("") : `<div class="empty-state">Aucune partie ouverte actuellement.</div>`}</div>
       </div>
     </section>
     <section class="dashboard-grid" style="margin-top:18px">
@@ -4175,6 +4204,14 @@ function renderGameQuizDetail(user) {
   const course = getCourseById(quiz.courseId);
   const openSessions = state.gameSessions.filter((session) => session.quizId === quiz.id && session.status !== "finished");
   const canPreviewQuestions = user && (user.role === "teacher" || user.role === "admin");
+  const canManageQuiz = canManageGameQuiz(user, quiz);
+  const quizAction = openSessions.length
+    ? openSessions.map((session) => `<button class="btn-primary" onclick="${user?.role === "student" ? `joinOpenGameSession('${session.id}')` : `openGameSession('${session.id}')`}">${user?.role === "student" ? "Rejoindre" : "Voir"} la partie ${escapeHtml(session.code)}</button>`).join("")
+    : user?.role === "student"
+      ? `<button class="btn-primary" onclick="startRevisionSession('${quiz.id}')">S'inscrire et jouer</button>`
+      : canManageQuiz
+        ? `<button class="btn-primary" onclick="startGameSession('${quiz.id}')">Lancer une compétition</button>`
+        : `<span class="badge primary">Aucune session ouverte</span>`;
   return `
     <section class="panel">
       <div class="toolbar" style="justify-content:space-between">
@@ -4194,7 +4231,7 @@ function renderGameQuizDetail(user) {
             ${quiz.className ? `<span class="badge">${escapeHtml(quiz.className)}</span>` : ""}
           </div>
           <div class="toolbar" style="margin-top:18px">
-            ${openSessions.length ? openSessions.map((session) => `<button class="btn-primary" onclick="joinOpenGameSession('${session.id}')">Rejoindre la partie ${escapeHtml(session.code)}</button>`).join("") : `<button class="btn-primary" onclick="startRevisionSession('${quiz.id}')">S'inscrire et jouer</button>`}
+            ${quizAction}
           </div>
         </div>
       </div>
@@ -4293,7 +4330,7 @@ function renderGameResults(session, quiz, user) {
 function renderReviensEnJeuPage(user) {
   if (state.ui.activeGameSessionId) return renderGameSessionPage(user);
   if (!user) return state.ui.activeGameQuizId ? renderGameQuizDetail(user) : renderGameStudentPage(user);
-  if (state.ui.activeGameQuizId && user.role === "student") return renderGameQuizDetail(user);
+  if (state.ui.activeGameQuizId) return renderGameQuizDetail(user);
   return user.role === "student" ? renderGameStudentPage(user) : renderGameTeacherPage(user);
 }
 
