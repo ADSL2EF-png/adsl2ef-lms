@@ -975,7 +975,14 @@ th { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-
   .policy-head { flex-direction: column; align-items: stretch; }
   .service-card img { height: 160px; }
   .founder-message { grid-template-columns: 1fr; }
-  .founder-photo { max-height: 460px; }
+  .founder-photo-wrap {
+    width: min(100%, 360px);
+    margin: 0 auto;
+  }
+  .founder-photo {
+    aspect-ratio: 3 / 4;
+    object-position: center center;
+  }
   .hero-panel, .panel, .sidebar-card { padding: 14px; border-radius: 18px; }
   .hero-title { font-size: 2rem; }
   .section-title { font-size: 1.15rem; overflow-wrap: anywhere; }

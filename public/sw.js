@@ -3,7 +3,7 @@
  * VERSION : 2.0.0
  */
 
-const CACHE_NAME = "adsl2ef-v9-social-footer";
+const CACHE_NAME = "adsl2ef-v10-founder-photo-fit";
 const OFFLINE_URL = "/offline.html";
 
 const PRECACHE_ASSETS = [
