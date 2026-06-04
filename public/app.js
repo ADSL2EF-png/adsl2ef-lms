@@ -2572,6 +2572,10 @@ function getGameQuizImage(quiz) {
   return `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(svg)}`;
 }
 
+function openGameQuizDetail(quizId) {
+  setScreen("game", { activeGameQuizId: quizId, activeGameSessionId: null });
+}
+
 function metricCard(label, value, trend) {
   return `<article class="metric-card"><span class="metric-label">${label}</span><strong class="metric-value">${value}</strong><div class="metric-trend">${trend}</div></article>`;
 }
@@ -3807,7 +3811,7 @@ function renderGameQuizCard(quiz, user) {
   const sessions = state.gameSessions.filter((session) => session.quizId === quiz.id);
   return `
     <article class="activity-card game-card">
-      <div class="game-quiz-cover" style="background-image:url('${getGameQuizImage(quiz)}')"></div>
+      <img class="game-quiz-cover" src="${getGameQuizImage(quiz)}" alt="${escapeHtml(quiz.title)}">
       <div class="toolbar" style="justify-content:space-between">
         <span class="badge primary">Reviens en Jeu</span>
         <span class="badge ${quiz.mode === "competition" ? "warning" : "success"}">${quiz.mode === "competition" ? "Compétition" : quiz.mode === "revision" ? "Révision" : "Entraînement"}</span>
@@ -3818,7 +3822,7 @@ function renderGameQuizCard(quiz, user) {
       <div class="toolbar" style="justify-content:space-between;margin-top:14px">
         <span class="tiny">${sessions.length} session(s)</span>
         <div class="toolbar">
-          ${canManageGameQuiz(user, quiz) ? `<button class="btn-primary" onclick="startGameSession('${quiz.id}')">Lancer</button><button class="btn-ghost" onclick="openGameQuestionBuilder('${quiz.id}')">Questions</button><button class="btn-ghost" onclick="openGameQuizEditor('${quiz.id}')">Modifier</button><button class="btn-ghost" onclick="removeGameQuiz('${quiz.id}')">Supprimer</button>` : `<button class="btn-primary" onclick="startRevisionSession('${quiz.id}')">S'exercer</button>`}
+          ${canManageGameQuiz(user, quiz) ? `<button class="btn-primary" onclick="startGameSession('${quiz.id}')">Lancer</button><button class="btn-ghost" onclick="openGameQuestionBuilder('${quiz.id}')">Questions</button><button class="btn-ghost" onclick="openGameQuizEditor('${quiz.id}')">Modifier</button><button class="btn-ghost" onclick="removeGameQuiz('${quiz.id}')">Supprimer</button>` : `<button class="btn-primary" onclick="openGameQuizDetail('${quiz.id}')">Voir / s'inscrire</button>`}
         </div>
       </div>
     </article>
@@ -3887,6 +3891,18 @@ function renderGameStudentPage(user) {
   const openSessions = state.gameSessions.filter((session) => session.status !== "finished");
   const revisionQuizzes = state.gameQuizzes.filter((quiz) => quiz.status === "published");
   return `
+    <section class="game-intro">
+      <div>
+        <p class="eyebrow">Reviens en Jeu</p>
+        <h2>Apprendre, réviser et jouer en classe</h2>
+        <p>Reviens en Jeu permet aux enseignants de transformer les cours en quiz rapides. Vous pouvez participer à une compétition avec un code, scanner un QR code, ou choisir un quiz publié pour vous entraîner.</p>
+      </div>
+      <div class="game-how-grid">
+        <div class="module-card"><strong>1. Connectez-vous</strong><div class="meta">Utilisez votre compte apprenant ADSL-2EF.</div></div>
+        <div class="module-card"><strong>2. Choisissez</strong><div class="meta">Tapez un code, scannez le QR code ou ouvrez un quiz.</div></div>
+        <div class="module-card"><strong>3. Jouez</strong><div class="meta">Répondez vite et juste pour gagner plus de points.</div></div>
+      </div>
+    </section>
     <section class="panel">
       <div class="toolbar" style="justify-content:space-between">
         <div>
@@ -3910,6 +3926,54 @@ function renderGameStudentPage(user) {
         <h2 class="section-title">Tous les Reviens en Jeu</h2>
         <p class="section-subtitle">Choisissez un quiz créé par les enseignants pour vous exercer.</p>
         <div class="course-grid" style="margin-top:18px">${revisionQuizzes.length ? revisionQuizzes.map((quiz) => renderGameQuizCard(quiz, user)).join("") : `<div class="empty-state">Aucun quiz disponible.</div>`}</div>
+      </div>
+    </section>
+  `;
+}
+
+function renderGameQuizDetail(user) {
+  const quiz = getGameQuizById(state.ui.activeGameQuizId);
+  if (!quiz) return `<section class="panel"><div class="empty-state">Quiz introuvable.</div></section>`;
+  const course = getCourseById(quiz.courseId);
+  const openSessions = state.gameSessions.filter((session) => session.quizId === quiz.id && session.status !== "finished");
+  return `
+    <section class="panel">
+      <div class="toolbar" style="justify-content:space-between">
+        <button class="btn-ghost" onclick="openReviensEnJeu()">Retour aux quiz</button>
+        <span class="badge primary">Reviens en Jeu</span>
+      </div>
+      <div class="game-detail-hero" style="margin-top:18px">
+        <img class="game-detail-cover" src="${getGameQuizImage(quiz)}" alt="${escapeHtml(quiz.title)}">
+        <div>
+          <p class="eyebrow">${quiz.mode === "competition" ? "Compétition" : quiz.mode === "revision" ? "Révision" : "Entraînement"}</p>
+          <h2 class="section-title">${escapeHtml(quiz.title)}</h2>
+          <p class="section-subtitle">${escapeHtml(quiz.description || "Quiz interactif pour réviser et progresser.")}</p>
+          <div class="badge-row" style="margin-top:14px">
+            <span class="badge primary">${quiz.questions.length} question(s)</span>
+            ${course ? `<span class="badge success">${escapeHtml(course.title)}</span>` : `<span class="badge success">Quiz indépendant</span>`}
+            ${quiz.subject ? `<span class="badge warning">${escapeHtml(quiz.subject)}</span>` : ""}
+            ${quiz.className ? `<span class="badge">${escapeHtml(quiz.className)}</span>` : ""}
+          </div>
+          <div class="toolbar" style="margin-top:18px">
+            ${openSessions.length ? openSessions.map((session) => `<button class="btn-primary" onclick="joinOpenGameSession('${session.id}')">Rejoindre la partie ${escapeHtml(session.code)}</button>`).join("") : `<button class="btn-primary" onclick="startRevisionSession('${quiz.id}')">S'inscrire et jouer</button>`}
+          </div>
+        </div>
+      </div>
+    </section>
+    <section class="dashboard-grid" style="margin-top:18px">
+      <div class="panel">
+        <h3>Comment jouer ?</h3>
+        <div class="simple-list" style="margin-top:12px">
+          <div class="module-card"><strong>Répondez question par question</strong><div class="meta">Chaque question a une durée et un nombre de points.</div></div>
+          <div class="module-card"><strong>La rapidité compte</strong><div class="meta">Une bonne réponse rapide donne un bonus.</div></div>
+          <div class="module-card"><strong>Résultat final</strong><div class="meta">À la fin, vous voyez votre score et le classement.</div></div>
+        </div>
+      </div>
+      <div class="panel">
+        <h3>Aperçu des questions</h3>
+        <div class="simple-list" style="margin-top:12px">
+          ${quiz.questions.length ? quiz.questions.slice(0, 5).map((question, index) => `<div class="module-card"><strong>Question ${index + 1}</strong><div class="meta">${escapeHtml(question.prompt)}</div><div class="tiny">${question.durationSeconds || 30}s · ${question.points || 10} pts</div></div>`).join("") : `<div class="empty-state">Les questions seront ajoutées par l'enseignant.</div>`}
+        </div>
       </div>
     </section>
   `;
@@ -3979,6 +4043,7 @@ function renderGameResults(session, quiz, user) {
 
 function renderReviensEnJeuPage(user) {
   if (state.ui.activeGameSessionId) return renderGameSessionPage(user);
+  if (state.ui.activeGameQuizId && user.role === "student") return renderGameQuizDetail(user);
   return user.role === "student" ? renderGameStudentPage(user) : renderGameTeacherPage(user);
 }
 
@@ -8326,6 +8391,7 @@ window.openActivity = openActivity;
 window.openReviensEnJeu = openReviensEnJeu;
 window.refreshReviensEnJeu = refreshReviensEnJeu;
 window.openGameSession = openGameSession;
+window.openGameQuizDetail = openGameQuizDetail;
 window.joinOpenGameSession = joinOpenGameSession;
 window.openGameQuizBuilder = openGameQuizBuilder;
 window.openGameQuizEditor = openGameQuizEditor;

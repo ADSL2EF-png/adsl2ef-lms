@@ -325,12 +325,60 @@ a { color: inherit; }
   border-color: rgba(23,71,166,0.18);
 }
 .game-quiz-cover {
+  display: block;
+  width: 100%;
   height: 150px;
   margin-bottom: 16px;
   border-radius: 18px;
-  background-size: cover;
-  background-position: center;
+  object-fit: cover;
   border: 1px solid rgba(23,71,166,.12);
+}
+.game-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(320px, .8fr);
+  gap: 18px;
+  margin-bottom: 18px;
+  padding: 24px;
+  border: 1px solid rgba(23,71,166,.16);
+  border-radius: 22px;
+  background: linear-gradient(135deg, #0d2d6e, #1747a6 62%, #e0a126);
+  color: #fff;
+}
+.game-intro h2 {
+  margin: 6px 0 10px;
+  font-family: "Playfair Display", serif;
+  font-size: 2.2rem;
+  line-height: 1.05;
+}
+.game-intro p {
+  max-width: 720px;
+  color: rgba(255,255,255,.84);
+  line-height: 1.65;
+}
+.game-intro .eyebrow,
+.game-intro .meta {
+  color: rgba(255,255,255,.78);
+}
+.game-how-grid {
+  display: grid;
+  gap: 10px;
+}
+.game-how-grid .module-card {
+  background: rgba(255,255,255,.12);
+  border-color: rgba(255,255,255,.22);
+}
+.game-detail-hero {
+  display: grid;
+  grid-template-columns: minmax(260px, .8fr) minmax(0, 1fr);
+  gap: 20px;
+  align-items: center;
+}
+.game-detail-cover {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border: 1px solid rgba(23,71,166,.14);
+  border-radius: 20px;
 }
 .game-play-panel {
   max-width: 980px;
@@ -917,8 +965,17 @@ th { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-
     flex-direction: column;
   }
   .game-answer-grid,
-  .podium-grid {
+  .podium-grid,
+  .game-intro,
+  .game-detail-hero {
     grid-template-columns: 1fr;
+  }
+  .game-intro {
+    padding: 16px;
+    border-radius: 18px;
+  }
+  .game-intro h2 {
+    font-size: 1.55rem;
   }
   .game-question {
     padding: 16px;
