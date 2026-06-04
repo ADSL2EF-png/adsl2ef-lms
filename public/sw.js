@@ -3,7 +3,7 @@
  * VERSION : 2.0.0
  */
 
-const CACHE_NAME = "adsl2ef-v7-teacher-game-catalog";
+const CACHE_NAME = "adsl2ef-v8-game-paid-linked";
 const OFFLINE_URL = "/offline.html";
 
 const PRECACHE_ASSETS = [

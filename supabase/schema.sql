@@ -145,13 +145,24 @@ create table if not exists public.game_quizzes (
   mode text not null default 'competition' check (mode in ('training', 'competition', 'revision')),
   status text not null default 'published' check (status in ('draft', 'published', 'archived')),
   course_id uuid references public.courses(id) on delete set null,
+  module_id uuid references public.course_modules(id) on delete set null,
   lesson_id uuid references public.lessons(id) on delete set null,
   subject text default '',
   class_name text default '',
+  access_type text not null default 'free' check (access_type in ('free', 'paid')),
+  price integer not null default 0,
+  pricing_label text default 'accès au quiz',
+  enrolled_user_ids jsonb not null default '[]'::jsonb,
   created_by uuid references public.profiles(id) on delete set null,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.game_quizzes add column if not exists module_id uuid references public.course_modules(id) on delete set null;
+alter table public.game_quizzes add column if not exists access_type text not null default 'free' check (access_type in ('free', 'paid'));
+alter table public.game_quizzes add column if not exists price integer not null default 0;
+alter table public.game_quizzes add column if not exists pricing_label text default 'accès au quiz';
+alter table public.game_quizzes add column if not exists enrolled_user_ids jsonb not null default '[]'::jsonb;
 
 create table if not exists public.game_questions (
   id uuid primary key default gen_random_uuid(),
@@ -210,6 +221,7 @@ create table if not exists public.game_results (
 
 create index if not exists game_quizzes_created_by_idx on public.game_quizzes(created_by);
 create index if not exists game_quizzes_course_idx on public.game_quizzes(course_id);
+create index if not exists game_quizzes_module_idx on public.game_quizzes(module_id);
 create index if not exists game_questions_quiz_idx on public.game_questions(quiz_id, position);
 create index if not exists game_sessions_code_idx on public.game_sessions(code);
 create index if not exists game_sessions_quiz_idx on public.game_sessions(quiz_id, status);

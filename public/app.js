@@ -1014,13 +1014,15 @@ async function restoreSessionWithApi() {
   return true;
 }
 
-async function initializePaymentWithApi({ provider, course, user }) {
+async function initializePaymentWithApi({ provider, course, user, itemType = "course", quiz = null }) {
   const persistence = getPersistenceConfig();
   return apiRequest(persistence.paymentInitPath, {
     method: "POST",
     body: {
       provider,
       courseId: course.id,
+      quizId: quiz?.id || "",
+      itemType,
       userId: user.id,
       amount: course.price,
       headline: course.title
@@ -1059,7 +1061,9 @@ function upsertPaymentRecord(record) {
   const normalized = {
     id: record.id,
     provider: String(record.provider || "manual").trim().toLowerCase(),
+    itemType: record.itemType || (record.quizId ? "gameQuiz" : "course"),
     courseId: record.courseId || "",
+    quizId: record.quizId || "",
     userId: record.userId || "",
     amount: Number(record.amount || 0),
     currency: record.currency || "XOF",
@@ -1088,6 +1092,24 @@ async function getPaymentStatusFromApi(paymentId) {
 }
 
 async function finalizeApprovedPayment(paymentRecord) {
+  if (paymentRecord.quizId) {
+    const quiz = getGameQuizById(paymentRecord.quizId);
+    const user = getUserById(paymentRecord.userId);
+    if (!quiz || !user) return;
+    quiz.enrolledUserIds = Array.isArray(quiz.enrolledUserIds) ? quiz.enrolledUserIds : [];
+    if (!quiz.enrolledUserIds.includes(user.id)) {
+      quiz.enrolledUserIds.push(user.id);
+      quiz.updatedAt = nowISO();
+      await publishPlatformEvent("game.quiz.updated", { quiz });
+    }
+    addNotification({
+      userId: user.id,
+      title: "Paiement confirmé",
+      message: `Votre paiement ${paymentProviderLabel(paymentRecord.provider)} pour le quiz ${quiz.title} a été confirmé.`,
+      level: "success"
+    });
+    return;
+  }
   const course = getCourseById(paymentRecord.courseId);
   const user = getUserById(paymentRecord.userId);
   if (!course || !user) return;
@@ -1112,6 +1134,8 @@ async function checkPaymentStatus(paymentId) {
       ...remote,
       id: remote.paymentId || remote.id || paymentId,
       courseId: remote.courseId || current.courseId,
+      quizId: remote.quizId || current.quizId,
+      itemType: remote.itemType || current.itemType,
       userId: remote.userId || current.userId,
       updatedAt: remote.updatedAt || nowISO()
     });
@@ -1120,9 +1144,9 @@ async function checkPaymentStatus(paymentId) {
       await finalizeApprovedPayment(payment);
       openModal(`
         <h2>Paiement confirmé</h2>
-        <p class="section-subtitle">Votre transaction ${escapeHtml(paymentProviderLabel(payment.provider))} a été validée. Le cours est maintenant accessible dans votre espace.</p>
+        <p class="section-subtitle">Votre transaction ${escapeHtml(paymentProviderLabel(payment.provider))} a été validée. ${payment.quizId ? "Le quiz est maintenant accessible." : "Le cours est maintenant accessible dans votre espace."}</p>
         <div class="toolbar" style="margin-top:18px">
-          <button class="btn-primary" onclick="closeModal(); openCourse('${payment.courseId}')">Accéder au cours</button>
+          <button class="btn-primary" onclick="closeModal(); ${payment.quizId ? `openGameQuizDetail('${payment.quizId}')` : `openCourse('${payment.courseId}')`}">${payment.quizId ? "Accéder au quiz" : "Accéder au cours"}</button>
         </div>
       `);
       return;
@@ -4006,6 +4030,38 @@ function canManageGameQuiz(user, quiz) {
   return user?.role === "admin" || (user?.role === "teacher" && quiz?.createdBy === user.id);
 }
 
+function getGameQuizModuleId(quiz) {
+  if (!quiz) return "";
+  if (quiz.moduleId) return quiz.moduleId;
+  const course = getCourseById(quiz.courseId);
+  if (!course || !quiz.lessonId) return "";
+  const module = course.modules.find((item) => (item.lessons || []).some((lesson) => lesson.id === quiz.lessonId));
+  return module?.id || "";
+}
+
+function isGameQuizPaid(quiz) {
+  return String(quiz?.accessType || "free") === "paid" && Number(quiz?.price || 0) > 0;
+}
+
+function hasGameQuizAccess(user, quiz) {
+  if (!user || !quiz) return false;
+  if (canManageGameQuiz(user, quiz)) return true;
+  if (!isGameQuizPaid(quiz)) return true;
+  return (quiz.enrolledUserIds || []).includes(user.id);
+}
+
+function getLinkedGameQuizzesForModule(course, moduleId, user) {
+  if (!course || !moduleId) return [];
+  const module = course.modules.find((item) => item.id === moduleId);
+  const lessonIds = new Set((module?.lessons || []).map((lesson) => lesson.id));
+  return state.gameQuizzes.filter((quiz) => {
+    if (quiz.courseId !== course.id) return false;
+    if (!canManageGameQuiz(user, quiz) && quiz.status !== "published") return false;
+    const quizModuleId = getGameQuizModuleId(quiz);
+    return quizModuleId === moduleId || (!quizModuleId && quiz.lessonId && lessonIds.has(quiz.lessonId));
+  });
+}
+
 function generateGameCode() {
   let code = "";
   do {
@@ -4053,6 +4109,7 @@ function renderGameQuizCard(quiz, user) {
       <div class="toolbar" style="justify-content:space-between">
         <span class="badge primary">Reviens en Jeu</span>
         <span class="badge ${quiz.mode === "competition" ? "warning" : "success"}">${quiz.mode === "competition" ? "Compétition" : quiz.mode === "revision" ? "Révision" : "Entraînement"}</span>
+        <span class="badge ${isGameQuizPaid(quiz) ? "warning" : "success"}">${isGameQuizPaid(quiz) ? formatPrice(quiz.price || 0) : "Gratuit"}</span>
       </div>
       <h3>${escapeHtml(quiz.title)}</h3>
       <p class="meta">${escapeHtml(quiz.description || "Quiz interactif ADSL-2EF.")}</p>
@@ -4205,10 +4262,11 @@ function renderGameQuizDetail(user) {
   const openSessions = state.gameSessions.filter((session) => session.quizId === quiz.id && session.status !== "finished");
   const canPreviewQuestions = user && (user.role === "teacher" || user.role === "admin");
   const canManageQuiz = canManageGameQuiz(user, quiz);
+  const hasAccess = hasGameQuizAccess(user, quiz);
   const quizAction = openSessions.length
-    ? openSessions.map((session) => `<button class="btn-primary" onclick="${user?.role === "student" ? `joinOpenGameSession('${session.id}')` : `openGameSession('${session.id}')`}">${user?.role === "student" ? "Rejoindre" : "Voir"} la partie ${escapeHtml(session.code)}</button>`).join("")
+    ? openSessions.map((session) => `<button class="btn-primary" onclick="${user?.role === "student" && hasAccess ? `joinOpenGameSession('${session.id}')` : user?.role === "student" ? `purchaseGameQuiz('${quiz.id}')` : `openGameSession('${session.id}')`}">${user?.role === "student" && hasAccess ? "Rejoindre" : user?.role === "student" ? "Souscrire pour jouer" : "Voir"} la partie ${escapeHtml(session.code)}</button>`).join("")
     : user?.role === "student"
-      ? `<button class="btn-primary" onclick="startRevisionSession('${quiz.id}')">S'inscrire et jouer</button>`
+      ? hasAccess ? `<button class="btn-primary" onclick="startRevisionSession('${quiz.id}')">S'inscrire et jouer</button>` : `<button class="btn-primary" onclick="purchaseGameQuiz('${quiz.id}')">Souscrire au quiz</button>`
       : canManageQuiz
         ? `<button class="btn-primary" onclick="startGameSession('${quiz.id}')">Lancer une compétition</button>`
         : `<span class="badge primary">Aucune session ouverte</span>`;
@@ -4226,6 +4284,7 @@ function renderGameQuizDetail(user) {
           <p class="section-subtitle">${escapeHtml(quiz.description || "Quiz interactif pour réviser et progresser.")}</p>
           <div class="badge-row" style="margin-top:14px">
             <span class="badge primary">${quiz.questions.length} question(s)</span>
+            <span class="badge ${isGameQuizPaid(quiz) ? "warning" : "success"}">${isGameQuizPaid(quiz) ? `${formatPrice(quiz.price || 0)} · ${escapeHtml(quiz.pricingLabel || "accès au quiz")}` : "Gratuit"}</span>
             ${course ? `<span class="badge success">${escapeHtml(course.title)}</span>` : `<span class="badge success">Quiz indépendant</span>`}
             ${quiz.subject ? `<span class="badge warning">${escapeHtml(quiz.subject)}</span>` : ""}
             ${quiz.className ? `<span class="badge">${escapeHtml(quiz.className)}</span>` : ""}
@@ -4337,6 +4396,7 @@ function renderReviensEnJeuPage(user) {
 function renderCourseMainMenu(course, user, activeModule, activeLesson, activities, completionMetrics, moduleMetrics) {
   const release = normalizeCourseReleaseState(course.release);
   const isStudent = user.role === "student";
+  const linkedGameQuizzes = getLinkedGameQuizzesForModule(course, activeModule?.id || "", user);
   return `
     <section class="course-main-menu" aria-label="Menu principal du cours">
       <div class="toolbar course-menu-head">
@@ -4354,6 +4414,7 @@ function renderCourseMainMenu(course, user, activeModule, activeLesson, activiti
         <a href="#course-lesson-panel" class="chip">Cours</a>
         <a href="#course-lessons" class="chip">Leçons</a>
         <a href="#course-activities-panel" class="chip">Devoirs / quiz</a>
+        <a href="#course-game-quizzes" class="chip">Reviens en Jeu</a>
         <a href="#course-discussions" class="chip">Annonces</a>
         <a href="#course-progress" class="chip">Progression</a>
       </div>
@@ -4390,6 +4451,15 @@ function renderCourseMainMenu(course, user, activeModule, activeLesson, activiti
               <strong>${escapeHtml(activity.title)}</strong>
               <span>${activity.type === "quiz" ? "Quiz" : "Devoir"} · ${formatDate(activity.dueDate)}</span>
             </button>`).join("") || `<div class="empty-state">Aucun devoir ou quiz pour ce module.</div>`}
+          </div>
+        </div>
+        <div class="course-menu-section" id="course-game-quizzes">
+          <div class="menu-section-title">Reviens en Jeu</div>
+          <div class="course-menu-list">
+            ${linkedGameQuizzes.map((quiz) => `<button class="menu-card-btn" onclick="openGameQuizDetail('${quiz.id}')">
+              <strong>${escapeHtml(quiz.title)}</strong>
+              <span>${isGameQuizPaid(quiz) ? formatPrice(quiz.price || 0) : "Gratuit"} · ${quiz.questions.length} question(s)</span>
+            </button>`).join("") || `<div class="empty-state">Aucun quiz Reviens en Jeu pour ce module.</div>`}
           </div>
         </div>
       </div>
@@ -6628,16 +6698,71 @@ function purchaseCourse(courseId) {
   `);
 }
 
+async function purchaseGameQuiz(quizId) {
+  const user = getCurrentUser();
+  const quiz = getGameQuizById(quizId);
+  if (!user) {
+    showAuthModal("login");
+    return;
+  }
+  if (!quiz) return;
+  if (user.role !== "student") {
+    openModal(`
+      <h2>Compte apprenant requis</h2>
+      <p class="section-subtitle">La souscription aux quiz est réservée aux comptes apprenants. Les enseignants peuvent créer, consulter ou lancer les quiz.</p>
+    `);
+    return;
+  }
+  quiz.enrolledUserIds = Array.isArray(quiz.enrolledUserIds) ? quiz.enrolledUserIds : [];
+  if (!isGameQuizPaid(quiz)) {
+    if (!quiz.enrolledUserIds.includes(user.id)) {
+      quiz.enrolledUserIds.push(user.id);
+      quiz.updatedAt = nowISO();
+      await publishPlatformEvent("game.quiz.updated", { quiz });
+      saveState();
+    }
+    openGameQuizDetail(quiz.id);
+    return;
+  }
+  if (quiz.enrolledUserIds.includes(user.id)) {
+    openGameQuizDetail(quiz.id);
+    return;
+  }
+  const payments = state.config.payments || {};
+  const paymentChoices = [];
+  if (payments.mixxEnabled) paymentChoices.push(`<button class="btn-primary" onclick="processGamePayment('${quiz.id}','mixx')">Payer avec Mixx by Yas</button>`);
+  if (payments.floozEnabled) paymentChoices.push(`<button class="btn-primary" onclick="processGamePayment('${quiz.id}','flooz')">Payer avec Flooz</button>`);
+  if (payments.paygateEnabled) paymentChoices.push(`<button class="btn-primary" onclick="processGamePayment('${quiz.id}','paygate')">Payer avec PayGate</button>`);
+  if (payments.mode === "manual") paymentChoices.push(`<button class="btn-ghost" onclick="processGamePayment('${quiz.id}','manual')">Payer manuellement par WhatsApp</button>`);
+  openModal(`
+    <h2>Souscription au quiz</h2>
+    <p class="section-subtitle">Choisissez votre mode de paiement pour <strong>${escapeHtml(quiz.title)}</strong>.</p>
+    <div class="module-card" style="margin-top:16px">
+      <strong>Montant : ${formatPrice(quiz.price || 0)}</strong>
+      <div class="meta" style="margin-top:8px">${escapeHtml(quiz.pricingLabel || "accès au quiz")}</div>
+    </div>
+    <div class="announcement" style="margin-top:14px">Le quiz sera activé après validation du paiement. Pour un paiement manuel, envoyez le message WhatsApp généré à l'entreprise.</div>
+    <div class="toolbar" style="margin-top:18px">
+      ${paymentChoices.join("") || `<button class="btn-primary" onclick="processGamePayment('${quiz.id}','manual')">Payer manuellement par WhatsApp</button>`}
+    </div>
+  `);
+}
+
 function renderGameQuizScopeFields(quiz = {}) {
   const actor = getCurrentUser();
   const courses = getVisibleCoursesForUser(actor).filter((course) => actor?.role !== "student" && canTeachCourse(actor, course));
   const selectedCourse = getCourseById(quiz.courseId) || courses[0];
+  const modules = selectedCourse?.modules || [];
   const lessons = (selectedCourse?.modules || []).flatMap((module) => (module.lessons || []).map((lesson) => ({ ...lesson, moduleTitle: module.title })));
   return `
     <div class="field"><label for="game-course">Cours lié</label><select id="game-course" name="courseId"><option value="">Quiz indépendant</option>${courses.map((course) => `<option value="${course.id}" ${quiz.courseId === course.id ? "selected" : ""}>${escapeHtml(course.title)}</option>`).join("")}</select></div>
+    <div class="field"><label for="game-module">Module lié</label><select id="game-module" name="moduleId"><option value="">Aucun module</option>${modules.map((module) => `<option value="${module.id}" ${getGameQuizModuleId(quiz) === module.id ? "selected" : ""}>${escapeHtml(module.title)}</option>`).join("")}</select></div>
     <div class="field"><label for="game-lesson">Leçon liée</label><select id="game-lesson" name="lessonId"><option value="">Aucune leçon</option>${lessons.map((lesson) => `<option value="${lesson.id}" ${quiz.lessonId === lesson.id ? "selected" : ""}>${escapeHtml(lesson.moduleTitle)} · ${escapeHtml(lesson.title)}</option>`).join("")}</select></div>
     <div class="field"><label for="game-subject">Matière</label><input id="game-subject" name="subject" value="${escapeHtml(quiz.subject || "")}" placeholder="Mathématiques, français..."></div>
     <div class="field"><label for="game-class">Classe</label><input id="game-class" name="className" value="${escapeHtml(quiz.className || "")}" placeholder="4ème, Terminale, CAT 1..."></div>
+    <div class="field"><label for="game-access">Accès</label><select id="game-access" name="accessType"><option value="free" ${String(quiz.accessType || "free") === "free" ? "selected" : ""}>Gratuit</option><option value="paid" ${quiz.accessType === "paid" ? "selected" : ""}>Payant</option></select></div>
+    <div class="field"><label for="game-price">Prix quiz</label><input id="game-price" name="price" type="number" min="0" step="500" value="${Number(quiz.price || 0)}" placeholder="Ex: 1000"></div>
+    <div class="field"><label for="game-pricing-label">Libellé prix</label><input id="game-pricing-label" name="pricingLabel" value="${escapeHtml(quiz.pricingLabel || "accès au quiz")}" placeholder="accès au quiz"></div>
   `;
 }
 
@@ -6703,9 +6828,14 @@ async function handleGameQuizCreate(event) {
     mode: String(formData.get("mode") || "competition"),
     status: String(formData.get("status") || "published"),
     courseId: String(formData.get("courseId") || "").trim(),
+    moduleId: String(formData.get("moduleId") || "").trim(),
     lessonId: String(formData.get("lessonId") || "").trim(),
     subject: String(formData.get("subject") || "").trim(),
     className: String(formData.get("className") || "").trim(),
+    accessType: String(formData.get("accessType") || "free").trim(),
+    price: Number(formData.get("price") || 0),
+    pricingLabel: String(formData.get("pricingLabel") || "accès au quiz").trim(),
+    enrolledUserIds: [],
     questions: [],
     createdBy: getCurrentUser().id,
     createdAt: nowISO(),
@@ -6729,9 +6859,14 @@ async function handleGameQuizEdit(event) {
   quiz.mode = String(formData.get("mode") || "competition");
   quiz.status = String(formData.get("status") || "published");
   quiz.courseId = String(formData.get("courseId") || "").trim();
+  quiz.moduleId = String(formData.get("moduleId") || "").trim();
   quiz.lessonId = String(formData.get("lessonId") || "").trim();
   quiz.subject = String(formData.get("subject") || "").trim();
   quiz.className = String(formData.get("className") || "").trim();
+  quiz.accessType = String(formData.get("accessType") || "free").trim();
+  quiz.price = Number(formData.get("price") || 0);
+  quiz.pricingLabel = String(formData.get("pricingLabel") || "accès au quiz").trim();
+  quiz.enrolledUserIds = quiz.enrolledUserIds || [];
   quiz.updatedAt = nowISO();
   const remote = await publishPlatformEvent("game.quiz.updated", { quiz });
   mergeRemoteEntity(quiz, extractRemoteEntity(remote, "quiz"));
@@ -6806,6 +6941,10 @@ async function startRevisionSession(quizId) {
     return;
   }
   if (user.role !== "student") return;
+  if (!hasGameQuizAccess(user, quiz)) {
+    purchaseGameQuiz(quizId);
+    return;
+  }
   const session = {
     id: crypto.randomUUID(),
     quizId,
@@ -6837,6 +6976,11 @@ async function handleGameJoin(event) {
     openModal(`<h2>Code invalide</h2><p class="section-subtitle">Vérifiez le code donné par l'enseignant.</p>`);
     return;
   }
+  const quiz = getGameQuizById(session.quizId);
+  if (user.role === "student" && quiz && !hasGameQuizAccess(user, quiz)) {
+    purchaseGameQuiz(quiz.id);
+    return;
+  }
   if (!session.participants.some((item) => item.userId === user.id)) {
     session.participants.push({ userId: user.id, name: user.name, answers: [], joinedAt: nowISO(), currentQuestionStartedAt: Date.now() });
     await publishPlatformEvent("game.session.joined", { sessionId: session.id, participant: session.participants[session.participants.length - 1] });
@@ -6853,6 +6997,11 @@ async function joinOpenGameSession(sessionId) {
     return;
   }
   if (!session || session.status === "finished") return;
+  const quiz = getGameQuizById(session.quizId);
+  if (user.role === "student" && quiz && !hasGameQuizAccess(user, quiz)) {
+    purchaseGameQuiz(quiz.id);
+    return;
+  }
   if (!session.participants.some((item) => item.userId === user.id)) {
     session.participants.push({ userId: user.id, name: user.name, answers: [], joinedAt: nowISO(), currentQuestionStartedAt: Date.now() });
     await publishPlatformEvent("game.session.joined", { sessionId: session.id, participant: session.participants[session.participants.length - 1] });
@@ -6997,6 +7146,117 @@ async function processPayment(courseId, provider) {
     <h2>Paiement initié</h2>
     <p class="section-subtitle">Le parcours <strong>${escapeHtml(course.title)}</strong> sera ajouté à votre espace uniquement après confirmation effective du paiement.</p>
     <div class="announcement" style="margin-top:14px">Gardez cette référence. En cas de difficulté, l'administration peut retrouver la transaction sans vous demander votre mot de passe.</div>
+    <div class="module-card" style="margin-top:16px">
+      <strong>${escapeHtml(paymentProviderLabel(paymentRecord.provider))}</strong>
+      <div class="meta" style="margin-top:8px">${escapeHtml(paymentStatusLabel(paymentRecord.status))}</div>
+      <div class="tiny" style="margin-top:8px">Référence : ${escapeHtml(paymentRecord.merchantReference || paymentRecord.id)}</div>
+    </div>
+    <div class="toolbar" style="margin-top:18px">
+      ${paymentRecord.paymentUrl ? `<a class="btn-primary" href="${escapeHtml(paymentRecord.paymentUrl)}" target="_blank" rel="noreferrer">Ouvrir le paiement</a>` : ""}
+      <button class="btn-ghost" onclick="checkPaymentStatus('${paymentRecord.id}')">Vérifier le paiement</button>
+    </div>
+  `);
+}
+
+async function processGamePayment(quizId, provider) {
+  const user = getCurrentUser();
+  const quiz = getGameQuizById(quizId);
+  if (!user || !quiz) return;
+  const paymentItem = {
+    id: quiz.courseId || quiz.id,
+    title: `Quiz Reviens en Jeu - ${quiz.title}`,
+    price: Number(quiz.price || 0)
+  };
+  if (provider === "manual") {
+    const localPayment = upsertPaymentRecord({
+      id: crypto.randomUUID(),
+      provider: "manual",
+      itemType: "gameQuiz",
+      courseId: quiz.courseId || "",
+      quizId: quiz.id,
+      userId: user.id,
+      amount: quiz.price,
+      currency: "XOF",
+      status: "pending",
+      merchantReference: `quiz-manual-${Date.now()}-${quiz.id.slice(0, 8)}`,
+      createdAt: nowISO(),
+      updatedAt: nowISO()
+    });
+    saveState();
+    const site = state.config.site || {};
+    const message = [
+      "Bonjour ADSL-2EF,",
+      "",
+      "Je souhaite payer un quiz Reviens en Jeu et demander la validation manuelle de mon accès.",
+      "",
+      `Nom : ${user.name}`,
+      `Email : ${user.email}`,
+      `Téléphone : ${user.phone || ""}`,
+      `Quiz : ${quiz.title}`,
+      `Montant : ${formatPrice(quiz.price || 0)}`,
+      `Référence : ${localPayment.merchantReference || localPayment.id}`,
+      "",
+      "Merci de m'indiquer les consignes de paiement et de valider mon accès après confirmation."
+    ].join("\n");
+    const baseUrl = String(site.whatsappUrl || "").trim() || "https://wa.me/22893767621";
+    const separator = baseUrl.includes("?") ? "&" : "?";
+    window.open(`${baseUrl}${separator}text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+    openModal(`
+      <h2>Demande envoyée vers WhatsApp</h2>
+      <p class="section-subtitle">Le message de souscription au quiz est prêt dans WhatsApp. Envoyez-le à l'entreprise pour demander la validation.</p>
+      <div class="module-card" style="margin-top:16px">
+        <strong>${escapeHtml(quiz.title)}</strong>
+        <div class="meta" style="margin-top:8px">Montant : ${formatPrice(quiz.price || 0)}</div>
+        <div class="tiny" style="margin-top:8px">Référence : ${escapeHtml(localPayment.merchantReference || localPayment.id)}</div>
+      </div>
+    `);
+    return;
+  }
+  if (!shouldUseApiPersistence()) {
+    openModal(`
+      <h2>Backend paiement requis</h2>
+      <p class="section-subtitle">Les paiements électroniques Mixx/Flooz/PayGate doivent être initialisés côté serveur. Utilisez le paiement manuel WhatsApp ou activez l'API backend.</p>
+    `);
+    return;
+  }
+  let remotePayment = null;
+  try {
+    remotePayment = await initializePaymentWithApi({ provider, course: paymentItem, user, itemType: "gameQuiz", quiz });
+  } catch (error) {
+    console.warn("Game payment API init failed:", error);
+    openModal(`
+      <h2>Initialisation impossible</h2>
+      <p class="section-subtitle">${escapeHtml(formatApiErrorMessage("L'initialisation du paiement"))}</p>
+    `);
+    return;
+  }
+  const paymentRecord = upsertPaymentRecord({
+    id: remotePayment.paymentId || crypto.randomUUID(),
+    provider,
+    itemType: "gameQuiz",
+    courseId: quiz.courseId || "",
+    quizId: quiz.id,
+    userId: user.id,
+    amount: quiz.price,
+    currency: remotePayment.currency || "XOF",
+    status: remotePayment.status || "pending",
+    merchantReference: remotePayment.merchantReference || "",
+    providerReference: remotePayment.providerReference || "",
+    paymentUrl: remotePayment.paymentUrl || "",
+    failureReason: remotePayment.failureReason || "",
+    createdAt: remotePayment.createdAt || nowISO(),
+    updatedAt: remotePayment.updatedAt || nowISO()
+  });
+  addNotification({
+    userId: user.id,
+    title: "Paiement initié",
+    message: `Une transaction ${paymentProviderLabel(provider)} a été ouverte pour le quiz ${quiz.title}.`,
+    level: "primary"
+  });
+  saveState();
+  openModal(`
+    <h2>Paiement initié</h2>
+    <p class="section-subtitle">Le quiz <strong>${escapeHtml(quiz.title)}</strong> sera activé uniquement après confirmation effective du paiement.</p>
     <div class="module-card" style="margin-top:16px">
       <strong>${escapeHtml(paymentProviderLabel(paymentRecord.provider))}</strong>
       <div class="meta" style="margin-top:8px">${escapeHtml(paymentStatusLabel(paymentRecord.status))}</div>
@@ -8737,7 +8997,9 @@ window.openCourseEnrollmentModal = openCourseEnrollmentModal;
 window.openCourseRosterModal = openCourseRosterModal;
 window.openBulkEnrollmentModal = openBulkEnrollmentModal;
 window.purchaseCourse = purchaseCourse;
+window.purchaseGameQuiz = purchaseGameQuiz;
 window.processPayment = processPayment;
+window.processGamePayment = processGamePayment;
 window.checkPaymentStatus = checkPaymentStatus;
 window.showContactSalesModal = showContactSalesModal;
 window.refreshCoursesFromJsonBin = refreshCoursesFromJsonBin;
