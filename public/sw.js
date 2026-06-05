@@ -3,7 +3,7 @@
  * VERSION : 2.0.0
  */
 
-const CACHE_NAME = "adsl2ef-v14-teaching-profile-admin";
+const CACHE_NAME = "adsl2ef-v15-lesson-pedagogy";
 const OFFLINE_URL = "/offline.html";
 
 const PRECACHE_ASSETS = [

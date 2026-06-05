@@ -57,9 +57,18 @@ create table if not exists public.lessons (
   lesson_type text not null default 'reading',
   duration_label text default '',
   content text default '',
+  learning_objectives text default '',
+  targeted_competencies text default '',
+  atl_skills jsonb not null default '[]'::jsonb,
+  atl_notes text default '',
   position integer not null default 1,
   created_at timestamptz not null default now()
 );
+
+alter table public.lessons add column if not exists learning_objectives text default '';
+alter table public.lessons add column if not exists targeted_competencies text default '';
+alter table public.lessons add column if not exists atl_skills jsonb not null default '[]'::jsonb;
+alter table public.lessons add column if not exists atl_notes text default '';
 
 create table if not exists public.lesson_resources (
   id uuid primary key default gen_random_uuid(),

@@ -6,6 +6,13 @@ const teachingProfileLabels = {
   pro: "Formateur professionnel",
   both: "Enseignant-formateur"
 };
+const atlSkillLabels = {
+  research: "Recherche",
+  communication: "Communication",
+  thinking: "Pensée",
+  selfManagement: "Gestion de soi",
+  collaboration: "Compétences sociales / Collaboration"
+};
 const statusLabels = { draft: "Brouillon", published: "Publié", archived: "Archivé", submitted: "Soumis", reviewed: "Corrigé", pending: "En attente", graded: "Noté", pending_review: "En attente de validation" };
 // Les identifiants Supabase sont configurés dans le panneau d'administration
 // (Paramètres → Persistance → Supabase) et stockés dans localStorage.
@@ -79,6 +86,49 @@ function renderTeachingProfileOptions(selected = "school") {
   return Object.entries(teachingProfileLabels)
     .map(([value, label]) => `<option value="${value}" ${value === selected ? "selected" : ""}>${escapeHtml(label)}</option>`)
     .join("");
+}
+
+function normalizeAtlSkills(value) {
+  const values = Array.isArray(value) ? value : String(value || "").split(",");
+  return [...new Set(values.map((item) => String(item || "").trim()).filter((item) => Object.prototype.hasOwnProperty.call(atlSkillLabels, item)))];
+}
+
+function getLessonPedagogy(lesson = {}) {
+  return {
+    learningObjectives: String(lesson.learningObjectives || lesson.learning_objectives || "").trim(),
+    targetedCompetencies: String(lesson.targetedCompetencies || lesson.targeted_competencies || "").trim(),
+    atlSkills: normalizeAtlSkills(lesson.atlSkills || lesson.atl_skills || []),
+    atlNotes: String(lesson.atlNotes || lesson.atl_notes || "").trim()
+  };
+}
+
+function buildLessonPedagogyFromForm(formData) {
+  return {
+    learningObjectives: String(formData.get("learningObjectives") || "").trim(),
+    targetedCompetencies: String(formData.get("targetedCompetencies") || "").trim(),
+    atlSkills: normalizeAtlSkills(formData.getAll("atlSkills")),
+    atlNotes: String(formData.get("atlNotes") || "").trim()
+  };
+}
+
+function renderAtlSkillCheckboxes(selected = []) {
+  const selectedSet = new Set(normalizeAtlSkills(selected));
+  return Object.entries(atlSkillLabels)
+    .map(([value, label]) => `<label class="lesson-card" style="min-height:auto"><input type="checkbox" name="atlSkills" value="${value}" ${selectedSet.has(value) ? "checked" : ""}> ${escapeHtml(label)}</label>`)
+    .join("");
+}
+
+function renderLessonPedagogySummary(lesson) {
+  const pedagogy = getLessonPedagogy(lesson);
+  const hasDetails = pedagogy.learningObjectives || pedagogy.targetedCompetencies || pedagogy.atlSkills.length || pedagogy.atlNotes;
+  if (!hasDetails) return "";
+  return `
+    <div class="simple-list" style="margin-top:18px">
+      ${pedagogy.learningObjectives ? `<div class="module-card"><strong>Objectifs d'apprentissage</strong><div class="meta" style="margin-top:8px">${escapeHtml(pedagogy.learningObjectives)}</div></div>` : ""}
+      ${pedagogy.targetedCompetencies ? `<div class="module-card"><strong>Compétences visées</strong><div class="meta" style="margin-top:8px">${escapeHtml(pedagogy.targetedCompetencies)}</div></div>` : ""}
+      ${pedagogy.atlSkills.length || pedagogy.atlNotes ? `<div class="module-card"><strong>ATL - Approches de l'apprentissage</strong>${pedagogy.atlSkills.length ? `<div class="badge-row" style="margin-top:10px">${pedagogy.atlSkills.map((skill) => `<span class="badge primary">${escapeHtml(atlSkillLabels[skill])}</span>`).join("")}</div>` : ""}${pedagogy.atlNotes ? `<div class="meta" style="margin-top:10px">${escapeHtml(pedagogy.atlNotes)}</div>` : ""}</div>` : ""}
+    </div>
+  `;
 }
 
 function renderCourseCover(course, label, options = {}) {
@@ -790,6 +840,14 @@ function migrateState(parsed) {
         : ["Videos HD", "PDF telechargeables", "Quiz et devoirs", "Suivi de progression"],
       release: normalizeCourseReleaseState(course.release),
       ...course,
+      modules: (course.modules || []).map((module) => ({
+        ...module,
+        lessons: (module.lessons || []).map((lesson) => ({
+          ...lesson,
+          ...getLessonPedagogy(lesson),
+          resources: lesson.resources || []
+        }))
+      })),
       catalogType // priorité au catalogType final calculé
     };
   });
@@ -1423,6 +1481,7 @@ function mapModuleToSupabaseRow(courseId, module, index = 0) {
 }
 
 function mapLessonToSupabaseRow(moduleId, lesson, index = 0) {
+  const pedagogy = getLessonPedagogy(lesson);
   return {
     id: lesson.id,
     module_id: moduleId,
@@ -1430,6 +1489,10 @@ function mapLessonToSupabaseRow(moduleId, lesson, index = 0) {
     lesson_type: lesson.type || "reading",
     duration_label: lesson.duration || "",
     content: lesson.content || "",
+    learning_objectives: pedagogy.learningObjectives,
+    targeted_competencies: pedagogy.targetedCompetencies,
+    atl_skills: pedagogy.atlSkills,
+    atl_notes: pedagogy.atlNotes,
     position: Number(lesson.order || index + 1),
     created_at: lesson.createdAt || nowISO()
   };
@@ -1815,6 +1878,10 @@ async function loadStateFromSupabase() {
             type: lesson.lesson_type || "reading",
             duration: lesson.duration_label || "",
             content: lesson.content || "",
+            learningObjectives: lesson.learning_objectives || "",
+            targetedCompetencies: lesson.targeted_competencies || "",
+            atlSkills: normalizeAtlSkills(lesson.atl_skills || []),
+            atlNotes: lesson.atl_notes || "",
             resources: resources
               .filter((resource) => resource.lesson_id === lesson.id)
               .map((resource) => ({
@@ -3837,6 +3904,10 @@ function generateSupabaseSeedSql() {
     lesson_type: toSqlValue(lesson.type || "reading"),
     duration_label: toSqlValue(lesson.duration || ""),
     content: toSqlValue(lesson.content || ""),
+    learning_objectives: toSqlValue(getLessonPedagogy(lesson).learningObjectives),
+    targeted_competencies: toSqlValue(getLessonPedagogy(lesson).targetedCompetencies),
+    atl_skills: toSqlValue(getLessonPedagogy(lesson).atlSkills, "json"),
+    atl_notes: toSqlValue(getLessonPedagogy(lesson).atlNotes),
     position: toSqlValue(lesson.order || index + 1, "number"),
     created_at: toSqlValue(lesson.createdAt || nowISO(), "timestamp")
   }))));
@@ -3999,7 +4070,7 @@ function generateSupabaseSeedSql() {
     buildUpsertSql("profiles", ["id", "auth_user_id", "full_name", "email", "phone", "role", "teaching_profile", "bio", "avatar", "created_at", "updated_at"], profileRows),
     buildUpsertSql("courses", ["id", "title", "category", "catalog_type", "description", "image_url", "teacher_profile_id", "status", "audience", "duration_label", "price", "pricing_label", "sales_tag", "selling_points", "created_at", "updated_at"], courseRows),
     buildUpsertSql("course_modules", ["id", "course_id", "title", "summary", "position", "created_at"], moduleRows),
-    buildUpsertSql("lessons", ["id", "module_id", "title", "lesson_type", "duration_label", "content", "position", "created_at"], lessonRows),
+    buildUpsertSql("lessons", ["id", "module_id", "title", "lesson_type", "duration_label", "content", "learning_objectives", "targeted_competencies", "atl_skills", "atl_notes", "position", "created_at"], lessonRows),
     buildUpsertSql("lesson_resources", ["id", "lesson_id", "title", "resource_type", "url", "created_at"], resourceRows),
     buildUpsertSql("enrollments", ["id", "course_id", "profile_id", "status", "enrolled_at"], enrollmentRows, ["course_id", "profile_id"], ["status", "enrolled_at"]),
     buildUpsertSql("activities", ["id", "course_id", "module_id", "lesson_id", "activity_type", "title", "description", "due_at", "time_limit_minutes", "attempts_allowed", "passing_score", "max_points", "weight", "status", "created_by", "created_at", "updated_at"], activityRows),
@@ -5482,9 +5553,10 @@ function renderCourseWorkspace(user) {
                 </div>
               </div>
               <p class="section-subtitle">${escapeHtml(lesson.content)}</p>
-              ${lesson.resources.length ? `
+              ${renderLessonPedagogySummary(lesson)}
+              ${(lesson.resources || []).length ? `
                 <div class="lesson-embed-list">
-                  ${lesson.resources.map((resource) => `
+                  ${(lesson.resources || []).map((resource) => `
                     <article class="lesson-embed-card">
                       <div class="toolbar" style="justify-content:space-between;margin-bottom:12px">
                         <div>
@@ -5499,7 +5571,7 @@ function renderCourseWorkspace(user) {
                 </div>
               ` : ""}
               <div class="resource-grid">
-                ${lesson.resources.map((resource) => `<div class="resource-item"><div><strong>${escapeHtml(resource.title)}</strong><div class="tiny">${escapeHtml(resource.type)}</div></div>${renderResourceAction(course.id, module.id, lesson.id, resource)}</div>`).join("")}
+                ${(lesson.resources || []).map((resource) => `<div class="resource-item"><div><strong>${escapeHtml(resource.title)}</strong><div class="tiny">${escapeHtml(resource.type)}</div></div>${renderResourceAction(course.id, module.id, lesson.id, resource)}</div>`).join("")}
               </div>
               ${user.role === "student" ? `
                 <div class="toolbar" style="justify-content:space-between;margin-top:18px">
@@ -6627,6 +6699,13 @@ function openLessonBuilder(courseId, moduleId) {
       </select></div>
       <div class="field"><label for="lesson-duration">Durée estimée</label><input id="lesson-duration" name="duration" required placeholder="15 min"></div>
       <div class="field full"><label for="lesson-content">Contenu / Description</label><textarea id="lesson-content" name="content" placeholder="Décrivez le contenu de cette leçon..." required></textarea></div>
+      <div class="field full"><label for="lesson-learning-objectives">Objectifs d'apprentissage</label><textarea id="lesson-learning-objectives" name="learningObjectives" placeholder="À la fin de la leçon, l'apprenant devra savoir, comprendre ou être capable de..."></textarea></div>
+      <div class="field full"><label for="lesson-targeted-competencies">Compétences visées</label><textarea id="lesson-targeted-competencies" name="targetedCompetencies" placeholder="Décrivez les compétences spécifiques développées dans cette leçon."></textarea></div>
+      <div class="field full">
+        <label>ATL - Approches de l'apprentissage</label>
+        <div class="simple-list" style="margin-top:10px">${renderAtlSkillCheckboxes([])}</div>
+      </div>
+      <div class="field full"><label for="lesson-atl-notes">Précisions ATL</label><textarea id="lesson-atl-notes" name="atlNotes" placeholder="Précisez comment ces ATL seront travaillées, observées ou évaluées."></textarea></div>
       <div class="field full" style="background:#f8f9fa;padding:12px;border-radius:8px">
         <label style="font-weight:700;margin-bottom:8px;display:block">📎 Ressource principale</label>
         <div class="form-grid" style="gap:8px">
@@ -6653,6 +6732,7 @@ function openLessonEditor(courseId, moduleId, lessonId) {
   const lesson = module?.lessons.find((item) => item.id === lessonId);
   if (!course || !module || !lesson) return;
   const res = lesson.resources?.[0];
+  const pedagogy = getLessonPedagogy(lesson);
   openModal(`
     <h2>Modifier la leçon</h2>
     <form id="lesson-edit-form" data-course-id="${course.id}" data-module-id="${module.id}" data-lesson-id="${lesson.id}" class="form-grid" style="margin-top:18px">
@@ -6667,6 +6747,13 @@ function openLessonEditor(courseId, moduleId, lessonId) {
       </select></div>
       <div class="field"><label for="edit-lesson-duration">Durée</label><input id="edit-lesson-duration" name="duration" value="${escapeHtml(lesson.duration || "")}" required></div>
       <div class="field full"><label for="edit-lesson-content">Contenu / Description</label><textarea id="edit-lesson-content" name="content" required>${escapeHtml(lesson.content || "")}</textarea></div>
+      <div class="field full"><label for="edit-lesson-learning-objectives">Objectifs d'apprentissage</label><textarea id="edit-lesson-learning-objectives" name="learningObjectives" placeholder="À la fin de la leçon, l'apprenant devra savoir, comprendre ou être capable de...">${escapeHtml(pedagogy.learningObjectives)}</textarea></div>
+      <div class="field full"><label for="edit-lesson-targeted-competencies">Compétences visées</label><textarea id="edit-lesson-targeted-competencies" name="targetedCompetencies" placeholder="Décrivez les compétences spécifiques développées dans cette leçon.">${escapeHtml(pedagogy.targetedCompetencies)}</textarea></div>
+      <div class="field full">
+        <label>ATL - Approches de l'apprentissage</label>
+        <div class="simple-list" style="margin-top:10px">${renderAtlSkillCheckboxes(pedagogy.atlSkills)}</div>
+      </div>
+      <div class="field full"><label for="edit-lesson-atl-notes">Précisions ATL</label><textarea id="edit-lesson-atl-notes" name="atlNotes" placeholder="Précisez comment ces ATL seront travaillées, observées ou évaluées.">${escapeHtml(pedagogy.atlNotes)}</textarea></div>
       <div class="field full" style="background:#f8f9fa;padding:12px;border-radius:8px">
         <label style="font-weight:700;margin-bottom:8px;display:block">📎 Ressource principale</label>
         <div class="form-grid" style="gap:8px">
@@ -7809,7 +7896,7 @@ async function handleCourseCreate(event) {
     release: normalizeCourseReleaseState(null),
     createdAt: nowISO(),
     enrolledUserIds: [],
-    modules: [{ id: crypto.randomUUID(), title: "Module 1 - Démarrage", summary: "Module initial généré automatiquement.", order: 1, lessons: [{ id: crypto.randomUUID(), title: "Leçon d'introduction", type: "reading", duration: "10 min", content: "Ajoutez ici les objectifs, contenus et consignes de départ.", resources: [] }] }]
+    modules: [{ id: crypto.randomUUID(), title: "Module 1 - Démarrage", summary: "Module initial généré automatiquement.", order: 1, lessons: [{ id: crypto.randomUUID(), title: "Leçon d'introduction", type: "reading", duration: "10 min", content: "Ajoutez ici les objectifs, contenus et consignes de départ.", learningObjectives: "", targetedCompetencies: "", atlSkills: [], atlNotes: "", resources: [] }] }]
   };
   state.courses.unshift(newCourse);
   if (shouldUseSupabasePersistence()) {
@@ -8273,12 +8360,14 @@ async function handleLessonCreate(event) {
   const resourceTitle = String(formData.get("resourceTitle")).trim();
   const resourceUrl = String(formData.get("resourceUrl")).trim();
   const resourceType = String(formData.get("resourceType") || "link").trim();
+  const pedagogy = buildLessonPedagogyFromForm(formData);
   const lesson = {
     id: crypto.randomUUID(),
     title: String(formData.get("title")).trim(),
     type: String(formData.get("type")).trim(),
     duration: String(formData.get("duration")).trim(),
     content: String(formData.get("content")).trim(),
+    ...pedagogy,
     resources: resourceTitle && resourceUrl ? [{ id: crypto.randomUUID(), title: resourceTitle, type: resourceType, url: resourceUrl }] : []
   };
   module.lessons.push(lesson);
@@ -8327,6 +8416,7 @@ async function handleLessonEdit(event) {
   lesson.type = String(formData.get("type")).trim();
   lesson.duration = String(formData.get("duration")).trim();
   lesson.content = String(formData.get("content")).trim();
+  Object.assign(lesson, buildLessonPedagogyFromForm(formData));
   lesson.resources = resourceTitle && resourceUrl ? [{ id: lesson.resources?.[0]?.id || crypto.randomUUID(), title: resourceTitle, type: resourceType, url: resourceUrl }] : [];
   if (shouldUseSupabasePersistence()) {
     try {
