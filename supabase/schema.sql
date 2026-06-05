@@ -35,11 +35,13 @@ create table if not exists public.courses (
   sales_tag text default '',
   selling_points jsonb not null default '[]'::jsonb,
   release jsonb not null default '{"modules":{},"lessons":{}}'::jsonb,
+  live_classes jsonb not null default '[]'::jsonb,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
 
 alter table public.courses add column if not exists release jsonb not null default '{"modules":{},"lessons":{}}'::jsonb;
+alter table public.courses add column if not exists live_classes jsonb not null default '[]'::jsonb;
 
 create table if not exists public.course_modules (
   id uuid primary key default gen_random_uuid(),

@@ -131,6 +131,46 @@ function renderLessonPedagogySummary(lesson) {
   `;
 }
 
+function normalizeLiveClasses(course = {}) {
+  return (course.liveClasses || course.live_classes || [])
+    .map((item) => ({
+      id: item.id || crypto.randomUUID(),
+      courseId: item.courseId || item.course_id || course.id || "",
+      title: String(item.title || "").trim(),
+      description: String(item.description || "").trim(),
+      date: String(item.date || item.session_date || "").slice(0, 10),
+      time: String(item.time || item.session_time || "").slice(0, 5),
+      duration: String(item.duration || item.duration_label || "").trim(),
+      meetingUrl: String(item.meetingUrl || item.meeting_url || "").trim(),
+      recordingUrl: String(item.recordingUrl || item.recording_url || "").trim(),
+      createdBy: item.createdBy || item.created_by || "",
+      createdAt: item.createdAt || item.created_at || nowISO(),
+      updatedAt: item.updatedAt || item.updated_at || ""
+    }))
+    .sort((a, b) => getLiveClassTimestamp(a) - getLiveClassTimestamp(b));
+}
+
+function getLiveClassTimestamp(liveClass) {
+  const value = `${liveClass?.date || ""}T${liveClass?.time || "00:00"}`;
+  const timestamp = new Date(value).getTime();
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
+function splitLiveClasses(course) {
+  const now = Date.now();
+  const classes = normalizeLiveClasses(course);
+  return {
+    upcoming: classes.filter((item) => getLiveClassTimestamp(item) >= now),
+    past: classes.filter((item) => getLiveClassTimestamp(item) < now).reverse()
+  };
+}
+
+function formatLiveClassDateTime(liveClass) {
+  const timestamp = getLiveClassTimestamp(liveClass);
+  const dateLabel = timestamp ? formatDate(new Date(timestamp).toISOString()) : escapeHtml(liveClass.date || "");
+  return `${dateLabel}${liveClass.time ? ` · ${escapeHtml(liveClass.time)}` : ""}`;
+}
+
 function renderCourseCover(course, label, options = {}) {
   const height = options.height ? ` style="height:${escapeHtml(options.height)}"` : "";
   const src = escapeHtml(courseImageUrl(course));
@@ -848,6 +888,7 @@ function migrateState(parsed) {
           resources: lesson.resources || []
         }))
       })),
+      liveClasses: normalizeLiveClasses(course),
       catalogType // priorité au catalogType final calculé
     };
   });
@@ -1464,6 +1505,7 @@ function mapCourseToSupabaseRow(course) {
     sales_tag: course.salesTag || "",
     selling_points: course.sellingPoints || [],
     release: normalizeCourseReleaseState(course.release),
+    live_classes: normalizeLiveClasses(course),
     created_at: course.createdAt || nowISO(),
     updated_at: nowISO()
   };
@@ -1907,6 +1949,7 @@ async function loadStateFromSupabase() {
       pricingLabel: course.pricing_label || "",
       salesTag: course.sales_tag || "",
       sellingPoints: course.selling_points || [],
+      liveClasses: normalizeLiveClasses({ ...course, liveClasses: course.live_classes || [] }),
       enrolledUserIds: enrollments.filter((enrollment) => enrollment.course_id === course.id).map((enrollment) => enrollment.profile_id),
       modules: courseModules,
       release: normalizeCourseReleaseState(course.release),
@@ -3886,6 +3929,7 @@ function generateSupabaseSeedSql() {
     pricing_label: toSqlValue(course.pricingLabel || ""),
     sales_tag: toSqlValue(course.salesTag || ""),
     selling_points: toSqlValue(course.sellingPoints || [], "json"),
+    live_classes: toSqlValue(normalizeLiveClasses(course), "json"),
     created_at: toSqlValue(course.createdAt || nowISO(), "timestamp"),
     updated_at: "now()"
   }));
@@ -4068,7 +4112,7 @@ function generateSupabaseSeedSql() {
     "-- Execute after schema.sql and storage.sql",
     "",
     buildUpsertSql("profiles", ["id", "auth_user_id", "full_name", "email", "phone", "role", "teaching_profile", "bio", "avatar", "created_at", "updated_at"], profileRows),
-    buildUpsertSql("courses", ["id", "title", "category", "catalog_type", "description", "image_url", "teacher_profile_id", "status", "audience", "duration_label", "price", "pricing_label", "sales_tag", "selling_points", "created_at", "updated_at"], courseRows),
+    buildUpsertSql("courses", ["id", "title", "category", "catalog_type", "description", "image_url", "teacher_profile_id", "status", "audience", "duration_label", "price", "pricing_label", "sales_tag", "selling_points", "live_classes", "created_at", "updated_at"], courseRows),
     buildUpsertSql("course_modules", ["id", "course_id", "title", "summary", "position", "created_at"], moduleRows),
     buildUpsertSql("lessons", ["id", "module_id", "title", "lesson_type", "duration_label", "content", "learning_objectives", "targeted_competencies", "atl_skills", "atl_notes", "position", "created_at"], lessonRows),
     buildUpsertSql("lesson_resources", ["id", "lesson_id", "title", "resource_type", "url", "created_at"], resourceRows),
@@ -4549,6 +4593,58 @@ function renderGameResults(session, quiz, user) {
   `;
 }
 
+function renderLiveClassCard(course, liveClass, user, isPast = false) {
+  const canManage = canTeachCourse(user, course);
+  return `
+    <article class="module-card">
+      <div class="toolbar" style="justify-content:space-between;align-items:flex-start">
+        <div>
+          <strong>${escapeHtml(liveClass.title)}</strong>
+          <div class="meta" style="margin-top:6px">${formatLiveClassDateTime(liveClass)}${liveClass.duration ? ` · ${escapeHtml(liveClass.duration)}` : ""}</div>
+          ${liveClass.description ? `<div class="tiny" style="margin-top:8px">${escapeHtml(liveClass.description)}</div>` : ""}
+        </div>
+        <span class="badge ${isPast ? "success" : "warning"}">${isPast ? "Passée" : "À venir"}</span>
+      </div>
+      <div class="toolbar" style="margin-top:14px">
+        ${!isPast && liveClass.meetingUrl ? `<a class="btn-primary" href="${escapeHtml(liveClass.meetingUrl)}" target="_blank" rel="noreferrer">Rejoindre la séance</a>` : ""}
+        ${isPast && liveClass.recordingUrl ? `<a class="btn-primary" href="${escapeHtml(liveClass.recordingUrl)}" target="_blank" rel="noreferrer">Voir l'enregistrement</a>` : ""}
+        ${isPast && !liveClass.recordingUrl ? `<span class="tiny">Aucun enregistrement disponible pour le moment.</span>` : ""}
+        ${canManage ? `<button class="btn-ghost" onclick="openLiveClassEditor('${course.id}','${liveClass.id}')">Modifier</button><button class="btn-ghost danger" onclick="removeLiveClass('${course.id}','${liveClass.id}')">Supprimer</button>` : ""}
+      </div>
+    </article>
+  `;
+}
+
+function renderCourseLiveClassesPanel(course, user) {
+  const { upcoming, past } = splitLiveClasses(course);
+  const canManage = canTeachCourse(user, course);
+  return `
+    <section class="panel" id="course-live-classes" style="margin-top:18px">
+      <div class="toolbar" style="justify-content:space-between">
+        <div>
+          <p class="eyebrow">Classes en direct</p>
+          <h3>Sessions vidéo du cours</h3>
+        </div>
+        ${canManage ? `<button class="btn-primary" onclick="openLiveClassBuilder('${course.id}')">Créer une classe en direct</button>` : ""}
+      </div>
+      <div class="dashboard-grid" style="margin-top:18px">
+        <div>
+          <h3>Prochaines classes</h3>
+          <div class="simple-list" style="margin-top:12px">
+            ${upcoming.length ? upcoming.map((item) => renderLiveClassCard(course, item, user, false)).join("") : `<div class="empty-state">Aucune classe en direct prévue.</div>`}
+          </div>
+        </div>
+        <div>
+          <h3>Classes passées</h3>
+          <div class="simple-list" style="margin-top:12px">
+            ${past.length ? past.map((item) => renderLiveClassCard(course, item, user, true)).join("") : `<div class="empty-state">Aucune classe passée pour ce cours.</div>`}
+          </div>
+        </div>
+      </div>
+    </section>
+  `;
+}
+
 function renderReviensEnJeuPage(user) {
   if (state.ui.activeGameSessionId) return renderGameSessionPage(user);
   if (!user) return state.ui.activeGameQuizId ? renderGameQuizDetail(user) : renderGameStudentPage(user);
@@ -4560,6 +4656,7 @@ function renderCourseMainMenu(course, user, activeModule, activeLesson, activiti
   const release = normalizeCourseReleaseState(course.release);
   const isStudent = user.role === "student";
   const linkedGameQuizzes = getLinkedGameQuizzesForModule(course, activeModule?.id || "", user);
+  const { upcoming: upcomingLiveClasses } = splitLiveClasses(course);
   return `
     <section class="course-main-menu" aria-label="Menu principal du cours">
       <div class="toolbar course-menu-head">
@@ -4576,6 +4673,7 @@ function renderCourseMainMenu(course, user, activeModule, activeLesson, activiti
       <div class="course-mobile-chipbar">
         <a href="#course-lesson-panel" class="chip">Cours</a>
         <a href="#course-lessons" class="chip">Leçons</a>
+        <a href="#course-live-classes" class="chip">Classes en direct</a>
         <a href="#course-activities-panel" class="chip">Devoirs / quiz</a>
         <a href="#course-game-quizzes" class="chip">Reviens en Jeu</a>
         <a href="#course-discussions" class="chip">Annonces</a>
@@ -4614,6 +4712,12 @@ function renderCourseMainMenu(course, user, activeModule, activeLesson, activiti
               <strong>${escapeHtml(activity.title)}</strong>
               <span>${activity.type === "quiz" ? "Quiz" : "Devoir"} · ${formatDate(activity.dueDate)}</span>
             </button>`).join("") || `<div class="empty-state">Aucun devoir ou quiz pour ce module.</div>`}
+          </div>
+        </div>
+        <div class="course-menu-section">
+          <div class="menu-section-title">Classes en direct</div>
+          <div class="course-menu-list">
+            ${upcomingLiveClasses.slice(0, 3).map((item) => `<a class="menu-card-btn" href="#course-live-classes"><strong>${escapeHtml(item.title)}</strong><span>${formatLiveClassDateTime(item)}</span></a>`).join("") || `<div class="empty-state">Aucune classe prévue.</div>`}
           </div>
         </div>
         <div class="course-menu-section" id="course-game-quizzes">
@@ -5580,6 +5684,7 @@ function renderCourseWorkspace(user) {
                 </div>
               ` : ""}
             </section>` : `<div class="empty-state" style="margin-top:18px">Ce cours ne contient pas encore de leçons.</div>`}
+          ${renderCourseLiveClassesPanel(course, user)}
           <section class="panel" id="course-activities-panel" style="margin-top:18px">
             <h3>Activités du module</h3>
             <div class="activity-grid" style="margin-top:18px">
@@ -6774,6 +6879,43 @@ function openLessonEditor(courseId, moduleId, lessonId) {
   `);
 }
 
+function renderLiveClassFormFields(liveClass = {}) {
+  return `
+    <div class="field full"><label for="live-class-title">Titre</label><input id="live-class-title" name="title" value="${escapeHtml(liveClass.title || "")}" required placeholder="Ex: Classe en direct - Chapitre 1"></div>
+    <div class="field full"><label for="live-class-description">Description</label><textarea id="live-class-description" name="description" required placeholder="Objectif de la séance, consignes, préparation attendue...">${escapeHtml(liveClass.description || "")}</textarea></div>
+    <div class="field"><label for="live-class-date">Date</label><input id="live-class-date" name="date" type="date" value="${escapeHtml(liveClass.date || "")}" required></div>
+    <div class="field"><label for="live-class-time">Heure</label><input id="live-class-time" name="time" type="time" value="${escapeHtml(liveClass.time || "")}" required></div>
+    <div class="field"><label for="live-class-duration">Durée</label><input id="live-class-duration" name="duration" value="${escapeHtml(liveClass.duration || "")}" required placeholder="Ex: 60 min, 1h30"></div>
+    <div class="field full"><label for="live-class-meeting-url">Lien Google Meet / Zoom / autre</label><input id="live-class-meeting-url" name="meetingUrl" type="url" value="${escapeHtml(liveClass.meetingUrl || "")}" required placeholder="https://meet.google.com/..."></div>
+    <div class="field full"><label for="live-class-recording-url">Lien d'enregistrement (optionnel)</label><input id="live-class-recording-url" name="recordingUrl" type="url" value="${escapeHtml(liveClass.recordingUrl || "")}" placeholder="Lien Drive, YouTube, Zoom cloud..."></div>
+  `;
+}
+
+function openLiveClassBuilder(courseId) {
+  const course = getCourseById(courseId);
+  if (!course || !canTeachCourse(getCurrentUser(), course)) return;
+  openModal(`
+    <h2>Créer une classe en direct</h2>
+    <form id="live-class-form" data-course-id="${course.id}" class="form-grid" style="margin-top:18px">
+      ${renderLiveClassFormFields()}
+      <div class="field full"><button class="btn-primary" type="submit">Créer la classe en direct</button></div>
+    </form>
+  `);
+}
+
+function openLiveClassEditor(courseId, liveClassId) {
+  const course = getCourseById(courseId);
+  const liveClass = normalizeLiveClasses(course).find((item) => item.id === liveClassId);
+  if (!course || !liveClass || !canTeachCourse(getCurrentUser(), course)) return;
+  openModal(`
+    <h2>Modifier la classe en direct</h2>
+    <form id="live-class-edit-form" data-course-id="${course.id}" data-live-class-id="${liveClass.id}" class="form-grid" style="margin-top:18px">
+      ${renderLiveClassFormFields(liveClass)}
+      <div class="field full"><button class="btn-primary" type="submit">Enregistrer</button></div>
+    </form>
+  `);
+}
+
 function openReviewCenter() {
   const user = getCurrentUser();
   const pending = state.submissions.filter((submission) => {
@@ -7552,6 +7694,8 @@ function bindForms() {
   document.getElementById("module-edit-form")?.addEventListener("submit", handleModuleEdit);
   document.getElementById("lesson-form")?.addEventListener("submit", handleLessonCreate);
   document.getElementById("lesson-edit-form")?.addEventListener("submit", handleLessonEdit);
+  document.getElementById("live-class-form")?.addEventListener("submit", handleLiveClassCreate);
+  document.getElementById("live-class-edit-form")?.addEventListener("submit", handleLiveClassEdit);
   document.getElementById("announcement-form")?.addEventListener("submit", handleAnnouncementCreate);
   document.getElementById("message-form")?.addEventListener("submit", handleMessageCreate);
   document.getElementById("forum-form")?.addEventListener("submit", handleForumCreate);
@@ -7896,6 +8040,7 @@ async function handleCourseCreate(event) {
     release: normalizeCourseReleaseState(null),
     createdAt: nowISO(),
     enrolledUserIds: [],
+    liveClasses: [],
     modules: [{ id: crypto.randomUUID(), title: "Module 1 - Démarrage", summary: "Module initial généré automatiquement.", order: 1, lessons: [{ id: crypto.randomUUID(), title: "Leçon d'introduction", type: "reading", duration: "10 min", content: "Ajoutez ici les objectifs, contenus et consignes de départ.", learningObjectives: "", targetedCompetencies: "", atlSkills: [], atlNotes: "", resources: [] }] }]
   };
   state.courses.unshift(newCourse);
@@ -8432,6 +8577,76 @@ async function handleLessonEdit(event) {
   mergeRemoteEntity(lesson, extractRemoteEntity(remote, "lesson"));
   closeModal();
   setScreen("course", { activeCourseId: course.id, currentModuleId: module.id, currentLessonId: lesson.id });
+}
+
+function buildLiveClassFromForm(formData, base = {}) {
+  return {
+    ...base,
+    title: String(formData.get("title") || "").trim(),
+    description: String(formData.get("description") || "").trim(),
+    date: String(formData.get("date") || "").trim(),
+    time: String(formData.get("time") || "").trim(),
+    duration: String(formData.get("duration") || "").trim(),
+    meetingUrl: String(formData.get("meetingUrl") || "").trim(),
+    recordingUrl: String(formData.get("recordingUrl") || "").trim(),
+    updatedAt: nowISO()
+  };
+}
+
+async function persistCourseLiveClasses(course, logLabel) {
+  course.liveClasses = normalizeLiveClasses(course);
+  if (shouldUseSupabasePersistence()) {
+    try {
+      await supabaseUpsert("courses", mapCourseToSupabaseRow(course));
+    } catch (error) {
+      console.warn("Supabase live class sync ignored:", error);
+    }
+  }
+  if (logLabel) addLog(getCurrentUser().id, logLabel);
+  const remote = await publishPlatformEvent("course.updated", { course });
+  mergeRemoteEntity(course, extractRemoteEntity(remote, "course"));
+  saveState();
+}
+
+async function handleLiveClassCreate(event) {
+  event.preventDefault();
+  const course = getCourseById(event.currentTarget.dataset.courseId);
+  if (!course || !canTeachCourse(getCurrentUser(), course)) return;
+  const formData = new FormData(event.currentTarget);
+  const liveClass = buildLiveClassFromForm(formData, {
+    id: crypto.randomUUID(),
+    courseId: course.id,
+    createdBy: getCurrentUser().id,
+    createdAt: nowISO()
+  });
+  course.liveClasses = normalizeLiveClasses(course).concat(liveClass);
+  await persistCourseLiveClasses(course, `Classe en direct créée - ${course.title}`);
+  closeModal();
+  renderApp();
+}
+
+async function handleLiveClassEdit(event) {
+  event.preventDefault();
+  const course = getCourseById(event.currentTarget.dataset.courseId);
+  if (!course || !canTeachCourse(getCurrentUser(), course)) return;
+  const liveClassId = event.currentTarget.dataset.liveClassId;
+  const classes = normalizeLiveClasses(course);
+  const index = classes.findIndex((item) => item.id === liveClassId);
+  if (index < 0) return;
+  classes[index] = buildLiveClassFromForm(new FormData(event.currentTarget), classes[index]);
+  course.liveClasses = classes;
+  await persistCourseLiveClasses(course, `Classe en direct modifiée - ${course.title}`);
+  closeModal();
+  renderApp();
+}
+
+async function removeLiveClass(courseId, liveClassId) {
+  const course = getCourseById(courseId);
+  if (!course || !canTeachCourse(getCurrentUser(), course)) return;
+  if (!confirm("Supprimer cette classe en direct ?")) return;
+  course.liveClasses = normalizeLiveClasses(course).filter((item) => item.id !== liveClassId);
+  await persistCourseLiveClasses(course, `Classe en direct supprimée - ${course.title}`);
+  renderApp();
 }
 
 async function archiveCourse(courseId) {
@@ -9221,6 +9436,9 @@ window.openModuleBuilder = openModuleBuilder;
 window.openModuleEditor = openModuleEditor;
 window.openLessonBuilder = openLessonBuilder;
 window.openLessonEditor = openLessonEditor;
+window.openLiveClassBuilder = openLiveClassBuilder;
+window.openLiveClassEditor = openLiveClassEditor;
+window.removeLiveClass = removeLiveClass;
 window.openAnnouncementBuilder = openAnnouncementBuilder;
 window.openMessageComposer = openMessageComposer;
 window.openForumBuilder = openForumBuilder;
