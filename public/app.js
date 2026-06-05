@@ -4875,7 +4875,23 @@ function renderCoursesTable() {
   return `
     <table>
       <thead><tr><th>Cours</th><th>Statut</th><th>Modules</th><th>Inscrits</th><th>Actions</th></tr></thead>
-      <tbody>${courses.map((course) => `<tr><td>${escapeHtml(course.title)}</td><td>${escapeHtml(statusLabels[course.status] || course.status)}</td><td>${course.modules.length}</td><td>${course.enrolledUserIds.length}</td><td><div class="toolbar"><button class="btn-ghost" onclick="openCourseEditor('${course.id}')">Modifier</button><button class="btn-ghost" onclick="${course.status === "archived" ? `restoreCourse('${course.id}')` : `archiveCourse('${course.id}')`}">${course.status === "archived" ? "Restaurer" : "Archiver"}</button><button class="btn-ghost danger" onclick="removeCourse('${course.id}')">Supprimer</button></div></td></tr>`).join("")}</tbody>
+      <tbody>${courses.map((course) => {
+        const isPendingReview = course.status === "pending_review";
+        return `<tr>
+          <td>${escapeHtml(course.title)}</td>
+          <td><span class="badge ${isPendingReview ? "warning" : course.status === "published" ? "success" : ""}">${escapeHtml(statusLabels[course.status] || course.status)}</span></td>
+          <td>${course.modules.length}</td>
+          <td>${course.enrolledUserIds.length}</td>
+          <td>
+            <div class="toolbar">
+              ${isPendingReview ? `<button class="btn-primary" onclick="approveCourse('${course.id}')">Publier</button><button class="btn-ghost" onclick="rejectCourse('${course.id}')">Refuser</button>` : ""}
+              <button class="btn-ghost" onclick="openCourseEditor('${course.id}')">Modifier</button>
+              <button class="btn-ghost" onclick="${course.status === "archived" ? `restoreCourse('${course.id}')` : `archiveCourse('${course.id}')`}">${course.status === "archived" ? "Restaurer" : "Archiver"}</button>
+              <button class="btn-ghost danger" onclick="removeCourse('${course.id}')">Supprimer</button>
+            </div>
+          </td>
+        </tr>`;
+      }).join("")}</tbody>
     </table>
   `;
 }
@@ -4906,7 +4922,7 @@ async function approveUser(userId) {
     console.warn("Approve sync failed:", err);
   }
   saveState();
-  render();
+  renderApp();
 }
 
 async function rejectUser(userId) {
@@ -4926,7 +4942,7 @@ async function rejectUser(userId) {
     console.warn("Reject sync failed:", err);
   }
   saveState();
-  render();
+  renderApp();
 }
 
 async function approveCourse(courseId) {
@@ -4937,7 +4953,7 @@ async function approveCourse(courseId) {
   persistState(state);
   await publishPlatformEvent("course.updated", { course: { ...course } });
   saveState();
-  render();
+  renderApp();
 }
 
 async function rejectCourse(courseId) {
@@ -4948,7 +4964,7 @@ async function rejectCourse(courseId) {
   persistState(state);
   await publishPlatformEvent("course.updated", { course: { ...course } });
   saveState();
-  render();
+  renderApp();
 }
 
 async function approveEnrollment(enrollmentId) {
@@ -4964,7 +4980,7 @@ async function approveEnrollment(enrollmentId) {
   persistState(state);
   await publishPlatformEvent("course.updated", { course: { ...course } });
   saveState();
-  render();
+  renderApp();
 }
 
 async function rejectEnrollment(enrollmentId) {
@@ -4975,7 +4991,7 @@ async function rejectEnrollment(enrollmentId) {
   state.pendingEnrollments = state.pendingEnrollments.filter((e) => e.id !== enrollmentId);
   addNotification({ userId: enrollment.userId, title: "Inscription refusée", message: `Votre demande d'inscription au cours "${course?.title || ""}" a été refusée.`, level: "warning" });
   saveState();
-  render();
+  renderApp();
 }
 
 function renderPendingApprovalsPanel() {

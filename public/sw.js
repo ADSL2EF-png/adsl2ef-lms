@@ -3,7 +3,7 @@
  * VERSION : 2.0.0
  */
 
-const CACHE_NAME = "adsl2ef-v11-social-preview";
+const CACHE_NAME = "adsl2ef-v12-admin-pending-courses";
 const OFFLINE_URL = "/offline.html";
 
 const PRECACHE_ASSETS = [
