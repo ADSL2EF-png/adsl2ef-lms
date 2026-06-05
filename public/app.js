@@ -6212,6 +6212,8 @@ function openMyProfileEditor() {
 function openCourseEditor(courseId) {
   const course = getCourseById(courseId);
   const teachers = state.users.filter((user) => user.role === "teacher");
+  const actor = getCurrentUser();
+  const canPublishDirectly = actor?.role === "admin";
   if (!course) return;
   openModal(`
     <h2>Modifier le cours</h2>
@@ -6229,7 +6231,7 @@ function openCourseEditor(courseId) {
       <div class="field full"><label for="edit-course-description">Description</label><textarea id="edit-course-description" name="description" required>${escapeHtml(course.description)}</textarea></div>
       <div class="field full"><label for="edit-course-competencies">Compétences visées</label><textarea id="edit-course-competencies" name="competencies" placeholder="Une compétence par ligne">${escapeHtml((course.competencies || []).join("\n"))}</textarea></div>
       <div class="field"><label for="edit-course-teacher">Enseignant</label><select id="edit-course-teacher" name="teacherId">${teachers.map((teacher) => `<option value="${teacher.id}" ${teacher.id === course.teacherId ? "selected" : ""}>${escapeHtml(teacher.name)}</option>`).join("")}</select></div>
-      <div class="field"><label for="edit-course-status">Statut</label><select id="edit-course-status" name="status"><option value="draft" ${course.status === "draft" ? "selected" : ""}>Brouillon</option><option value="published" ${course.status === "published" ? "selected" : ""}>Publié</option></select></div>
+      <div class="field"><label for="edit-course-status">Statut</label><select id="edit-course-status" name="status"><option value="draft" ${course.status === "draft" ? "selected" : ""}>Brouillon</option><option value="published" ${course.status === "published" || course.status === "pending_review" ? "selected" : ""}>${canPublishDirectly ? "Publié" : "Soumettre pour validation"}</option></select></div>
       <div class="field"><label for="edit-course-catalog-type">Type de catalogue</label><select id="edit-course-catalog-type" name="catalogType"><option value="school" ${(course.catalogType || "school") === "school" ? "selected" : ""}>École Numérique</option><option value="pro" ${course.catalogType === "pro" ? "selected" : ""}>Formation Pro</option></select></div>
       <div class="field"><label for="edit-course-pro-audience">Public Formation Pro</label><select id="edit-course-pro-audience" name="proAudience">${renderProAudienceOptions(course.proAudience || "")}</select></div>
       <div class="field"><label for="edit-course-pro-category">Catégorie Formation Pro</label><select id="edit-course-pro-category" name="proCategory">${renderProCategoryOptions(course.proCategory || "")}</select></div>
@@ -7774,6 +7776,11 @@ async function handleCourseEdit(event) {
   const course = getCourseById(event.currentTarget.dataset.courseId);
   if (!course) return;
   const formData = new FormData(event.currentTarget);
+  const actor = getCurrentUser();
+  const isAdmin = actor?.role === "admin";
+  const requestedStatus = String(formData.get("status")).trim();
+  const nextStatus = isAdmin ? requestedStatus : (requestedStatus === "published" ? "pending_review" : requestedStatus);
+  const wasPendingReview = course.status === "pending_review";
   course.title = String(formData.get("title")).trim();
   course.category = String(formData.get("category")).trim();
   course.level = String(formData.get("level") || "").trim();
@@ -7788,13 +7795,18 @@ async function handleCourseEdit(event) {
   course.description = String(formData.get("description")).trim();
   course.competencies = normalizeCompetencies(String(formData.get("competencies") || ""), course);
   course.teacherId = String(formData.get("teacherId")).trim();
-  course.status = String(formData.get("status")).trim();
+  course.status = nextStatus;
   if (shouldUseSupabasePersistence()) {
     try {
       await supabaseUpsert("courses", mapCourseToSupabaseRow(course));
     } catch (error) {
       console.warn("Supabase course edit sync ignored:", error);
     }
+  }
+  if (course.status === "pending_review" && !wasPendingReview) {
+    state.users.filter((u) => u.role === "admin").forEach((admin) => {
+      addNotification({ userId: admin.id, title: "Cours en attente de validation", message: `"${course.title}" a été soumis pour publication par ${actor?.name || "un enseignant"}.`, level: "warning" });
+    });
   }
   addLog(getCurrentUser().id, `Cours modifié - ${course.title}`);
   const remote = await publishPlatformEvent("course.updated", { course });

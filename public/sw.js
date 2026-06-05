@@ -3,7 +3,7 @@
  * VERSION : 2.0.0
  */
 
-const CACHE_NAME = "adsl2ef-v12-admin-pending-courses";
+const CACHE_NAME = "adsl2ef-v13-teacher-course-review";
 const OFFLINE_URL = "/offline.html";
 
 const PRECACHE_ASSETS = [
