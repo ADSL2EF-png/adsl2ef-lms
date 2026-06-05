@@ -7,6 +7,7 @@ create table if not exists public.profiles (
   email text not null unique,
   phone text default '',
   role text not null check (role in ('admin', 'teacher', 'student')),
+  teaching_profile text default '',
   bio text default '',
   avatar text default '',
   approval_status text not null default 'pending' check (approval_status in ('pending', 'approved', 'rejected')),
@@ -16,6 +17,7 @@ create table if not exists public.profiles (
 
 alter table public.profiles add column if not exists approval_status text not null default 'pending';
 alter table public.profiles add column if not exists phone text default '';
+alter table public.profiles add column if not exists teaching_profile text default '';
 
 create table if not exists public.courses (
   id uuid primary key default gen_random_uuid(),
@@ -352,6 +354,7 @@ begin
     email,
     phone,
     role,
+    teaching_profile,
     bio,
     avatar
   )
@@ -361,6 +364,11 @@ begin
     new.email,
     coalesce(new.raw_user_meta_data->>'phone', ''),
     coalesce(new.raw_user_meta_data->>'role', 'student'),
+    case
+      when coalesce(new.raw_user_meta_data->>'role', 'student') = 'teacher'
+      then coalesce(new.raw_user_meta_data->>'teachingProfile', 'school')
+      else ''
+    end,
     '',
     upper(left(coalesce(new.raw_user_meta_data->>'full_name', new.email), 1))
   )
@@ -369,6 +377,7 @@ begin
         full_name = excluded.full_name,
         phone = excluded.phone,
         role = excluded.role,
+        teaching_profile = excluded.teaching_profile,
         updated_at = now();
   return new;
 end;

@@ -1,6 +1,11 @@
 ﻿const STORAGE_KEY = "adsl2ef-lms-v1";
 
 const roleLabels = { student: "Apprenant", teacher: "Enseignant", admin: "Administrateur" };
+const teachingProfileLabels = {
+  school: "Enseignant scolaire",
+  pro: "Formateur professionnel",
+  both: "Enseignant-formateur"
+};
 const statusLabels = { draft: "Brouillon", published: "Publié", archived: "Archivé", submitted: "Soumis", reviewed: "Corrigé", pending: "En attente", graded: "Noté", pending_review: "En attente de validation" };
 // Les identifiants Supabase sont configurés dans le panneau d'administration
 // (Paramètres → Persistance → Supabase) et stockés dans localStorage.
@@ -46,6 +51,36 @@ function getDriveImageFallbackUrls(value) {
 function courseImageUrl(course) {
   return normalizeImageUrl(course?.image) || "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80";
 }
+
+function normalizeTeachingProfile(value, role = "teacher") {
+  if (role !== "teacher") return "";
+  const normalized = String(value || "").trim();
+  return Object.prototype.hasOwnProperty.call(teachingProfileLabels, normalized) ? normalized : "school";
+}
+
+function getTeachingProfile(user) {
+  return normalizeTeachingProfile(user?.teachingProfile || user?.teaching_profile, user?.role);
+}
+
+function teachingProfileLabel(user) {
+  const profile = getTeachingProfile(user);
+  return profile ? teachingProfileLabels[profile] : "";
+}
+
+function canTeachCatalogType(user, catalogType) {
+  if (user?.role === "admin") return true;
+  if (user?.role !== "teacher") return false;
+  const profile = getTeachingProfile(user);
+  const type = catalogType === "pro" ? "pro" : "school";
+  return profile === "both" || profile === type;
+}
+
+function renderTeachingProfileOptions(selected = "school") {
+  return Object.entries(teachingProfileLabels)
+    .map(([value, label]) => `<option value="${value}" ${value === selected ? "selected" : ""}>${escapeHtml(label)}</option>`)
+    .join("");
+}
+
 function renderCourseCover(course, label, options = {}) {
   const height = options.height ? ` style="height:${escapeHtml(options.height)}"` : "";
   const src = escapeHtml(courseImageUrl(course));
@@ -159,7 +194,7 @@ const starterData = {
   },
   users: [
     { id: crypto.randomUUID(), name: "Admin ADSL-2EF", email: "admin@adsl2ef.tg", phone: "+228 93 76 76 21", password: "pbkdf2$915ce1deae4e61b06f0082392e95c633$859fe69b0f204c60712386d62c949c9c2c1def505f94bf1187b9380cc704b7ff", role: "admin", bio: "Supervision globale de la plateforme.", avatar: "AA", createdAt: nowISO() },
-    { id: crypto.randomUUID(), name: "Afi Mensah", email: "teacher@adsl2ef.tg", phone: "", password: "pbkdf2$21e8bc9160b0ec18554559b05fabec17$b301b0b650672cd29549928c5544515decb12716d98bf3ccf8e54bdcc0f39c33", role: "teacher", bio: "Enseignante de mathématiques et coordinatrice numérique.", avatar: "AM", createdAt: nowISO() },
+    { id: crypto.randomUUID(), name: "Afi Mensah", email: "teacher@adsl2ef.tg", phone: "", password: "pbkdf2$21e8bc9160b0ec18554559b05fabec17$b301b0b650672cd29549928c5544515decb12716d98bf3ccf8e54bdcc0f39c33", role: "teacher", teachingProfile: "both", bio: "Enseignante de mathématiques et coordinatrice numérique.", avatar: "AM", createdAt: nowISO() },
     { id: crypto.randomUUID(), name: "Kodjo Etse", email: "student@adsl2ef.tg", phone: "", password: "pbkdf2$94643f5bbd2e526f15a22c619ff9f1ac$6638dd832897a3d5c5187409b2191e584fe12eb3a993b210cb3cb6b709178951", role: "student", bio: "Élève de première scientifique.", avatar: "KE", createdAt: nowISO() }
   ],
   courses: [],
@@ -738,6 +773,10 @@ function migrateState(parsed) {
     ...structuredClone(starterData).session,
     ...(parsed.session || {})
   };
+  next.users = (parsed.users || []).map((user) => ({
+    ...user,
+    teachingProfile: normalizeTeachingProfile(user.teachingProfile || user.teaching_profile, user.role)
+  }));
   next.courses = (parsed.courses || []).map((course) => {
     const derivedCatalogType = course.category === "Formation Pro" ? "pro" : "school";
     const catalogType = course.catalogType || derivedCatalogType;
@@ -947,6 +986,7 @@ function normalizeRemoteUser(payload) {
     phone: source.phone || source.telephone || source.whatsapp || "",
     password: source.password || "",
     role: source.role || "student",
+    teachingProfile: normalizeTeachingProfile(source.teachingProfile || source.teaching_profile, source.role || "student"),
     bio: source.bio || "",
     avatar: source.avatar || initials(source.name || source.email),
     createdAt: source.createdAt || nowISO()
@@ -1230,6 +1270,7 @@ async function loginWithSupabase(email, password) {
     name: profile?.full_name || authUser.user_metadata?.full_name || authUser.email,
     phone: profile?.phone || authUser.user_metadata?.phone || "",
     role: profile?.role || authUser.user_metadata?.role || "student",
+    teachingProfile: normalizeTeachingProfile(profile?.teaching_profile || authUser.user_metadata?.teachingProfile, profile?.role || authUser.user_metadata?.role || "student"),
     bio: profile?.bio || "",
     avatar: profile?.avatar || initials(profile?.full_name || authUser.email),
     createdAt: profile?.created_at || authUser.created_at,
@@ -1251,7 +1292,8 @@ async function registerWithSupabase({ name, email, phone, password, role }) {
       data: {
         full_name: name,
         phone,
-        role
+        role,
+        teachingProfile: normalizeTeachingProfile("school", role)
       }
     }
   });
@@ -1262,7 +1304,8 @@ async function registerWithSupabase({ name, email, phone, password, role }) {
       full_name: name,
       email,
       phone,
-      role
+      role,
+      teachingProfile: normalizeTeachingProfile("school", role)
     });
   }
   if (data.session?.access_token) {
@@ -1282,6 +1325,7 @@ async function registerWithSupabase({ name, email, phone, password, role }) {
     name,
     phone,
     role,
+    teachingProfile: normalizeTeachingProfile("school", role),
     pending: true
   };
 }
@@ -1296,7 +1340,8 @@ async function restoreSessionWithSupabase() {
     full_name: authUser.user_metadata?.full_name || authUser.email,
     email: authUser.email,
     phone: authUser.user_metadata?.phone || "",
-    role: authUser.user_metadata?.role || "student"
+    role: authUser.user_metadata?.role || "student",
+    teachingProfile: normalizeTeachingProfile(authUser.user_metadata?.teachingProfile, authUser.user_metadata?.role || "student")
   });
   const { data: profile } = await client
     .from("profiles")
@@ -1327,6 +1372,7 @@ async function ensureSupabaseProfileRecord(authUser, profileInput = {}) {
     email: String(profileInput.email || authUser.email).trim().toLowerCase(),
     phone: profileInput.phone || authUser.user_metadata?.phone || "",
     role: isRoleAllowedForPublicRegistration(profileInput.role) ? profileInput.role : "student",
+    teaching_profile: normalizeTeachingProfile(profileInput.teachingProfile || profileInput.teaching_profile || authUser.user_metadata?.teachingProfile, profileInput.role || "student"),
     bio: profileInput.bio || "",
     avatar: profileInput.avatar || initials(profileInput.full_name || authUser.user_metadata?.full_name || authUser.email),
     approval_status: profileInput.approvalStatus || "pending"
@@ -1433,6 +1479,7 @@ function mapUserToSupabaseProfileRow(user) {
     email: user.email,
     phone: user.phone || "",
     role: user.role,
+    teaching_profile: normalizeTeachingProfile(user.teachingProfile, user.role),
     bio: user.bio || "",
     avatar: user.avatar || initials(user.name),
     created_at: user.createdAt || nowISO(),
@@ -1744,6 +1791,7 @@ async function loadStateFromSupabase() {
     phone: profile.phone || "",
     password: "",
     role: profile.role,
+    teachingProfile: normalizeTeachingProfile(profile.teaching_profile, profile.role),
     bio: profile.bio || "",
     avatar: profile.avatar || initials(profile.full_name || profile.email),
     createdAt: profile.created_at || nowISO()
@@ -2080,7 +2128,10 @@ async function loadStateFromApi() {
       if (usersRes.ok) {
         const usersData = await usersRes.json();
         if (usersData.users?.length) {
-          state.users = usersData.users;
+          state.users = usersData.users.map((user) => ({
+            ...user,
+            teachingProfile: normalizeTeachingProfile(user.teachingProfile || user.teaching_profile, user.role)
+          }));
         }
       }
     } catch (e) {
@@ -3747,6 +3798,7 @@ function generateSupabaseSeedSql() {
     email: toSqlValue(user.email),
     phone: toSqlValue(user.phone || ""),
     role: toSqlValue(user.role),
+    teaching_profile: toSqlValue(normalizeTeachingProfile(user.teachingProfile, user.role)),
     bio: toSqlValue(user.bio || ""),
     avatar: toSqlValue(user.avatar || initials(user.name)),
     created_at: toSqlValue(user.createdAt || nowISO(), "timestamp"),
@@ -3944,7 +3996,7 @@ function generateSupabaseSeedSql() {
     "-- ADSL-2EF LMS seed for Supabase",
     "-- Execute after schema.sql and storage.sql",
     "",
-    buildUpsertSql("profiles", ["id", "auth_user_id", "full_name", "email", "phone", "role", "bio", "avatar", "created_at", "updated_at"], profileRows),
+    buildUpsertSql("profiles", ["id", "auth_user_id", "full_name", "email", "phone", "role", "teaching_profile", "bio", "avatar", "created_at", "updated_at"], profileRows),
     buildUpsertSql("courses", ["id", "title", "category", "catalog_type", "description", "image_url", "teacher_profile_id", "status", "audience", "duration_label", "price", "pricing_label", "sales_tag", "selling_points", "created_at", "updated_at"], courseRows),
     buildUpsertSql("course_modules", ["id", "course_id", "title", "summary", "position", "created_at"], moduleRows),
     buildUpsertSql("lessons", ["id", "module_id", "title", "lesson_type", "duration_label", "content", "position", "created_at"], lessonRows),
@@ -4856,12 +4908,12 @@ function renderUsersTable() {
   const query = String(state.ui.adminUserFilter || "").trim().toLowerCase();
   const users = state.users.filter((user) => {
     if (!query) return true;
-    return user.name.toLowerCase().includes(query) || user.email.toLowerCase().includes(query) || String(user.phone || "").toLowerCase().includes(query) || user.role.toLowerCase().includes(query);
+    return user.name.toLowerCase().includes(query) || user.email.toLowerCase().includes(query) || String(user.phone || "").toLowerCase().includes(query) || user.role.toLowerCase().includes(query) || teachingProfileLabel(user).toLowerCase().includes(query);
   });
   return `
     <table>
       <thead><tr><th>Nom</th><th>Email</th><th>Téléphone</th><th>Profil</th><th>Inscription</th><th>Actions</th></tr></thead>
-      <tbody>${users.map((user) => `<tr><td>${escapeHtml(user.name)}</td><td>${escapeHtml(user.email)}</td><td>${escapeHtml(user.phone || "-")}</td><td>${roleLabels[user.role]}</td><td>${formatDate(user.createdAt)}</td><td><div class="toolbar"><button class="btn-ghost" onclick="openUserEditor('${user.id}')">Modifier</button><button class="btn-ghost" onclick="removeUser('${user.id}')">Supprimer</button></div></td></tr>`).join("")}</tbody>
+      <tbody>${users.map((user) => `<tr><td>${escapeHtml(user.name)}</td><td>${escapeHtml(user.email)}</td><td>${escapeHtml(user.phone || "-")}</td><td>${escapeHtml(roleLabels[user.role] || user.role)}${user.role === "teacher" ? `<div class="tiny">${escapeHtml(teachingProfileLabel(user))}</div>` : ""}</td><td>${formatDate(user.createdAt)}</td><td><div class="toolbar"><button class="btn-ghost" onclick="openUserEditor('${user.id}')">Modifier</button><button class="btn-ghost" onclick="removeUser('${user.id}')">Supprimer</button></div></td></tr>`).join("")}</tbody>
     </table>
   `;
 }
@@ -6112,7 +6164,9 @@ function openUserBuilder() {
 }
 
 function openCourseBuilder() {
-  const teachers = state.users.filter((user) => user.role === "teacher");
+  const actor = getCurrentUser();
+  const teachers = actor?.role === "teacher" ? [actor] : state.users.filter((user) => user.role === "teacher");
+  const canPublishDirectly = actor?.role === "admin";
   openModal(`
     <h2>Créer un cours</h2>
     <p class="section-subtitle">Le cours est créé avec un premier module et une première leçon pour accélérer la mise en place.</p>
@@ -6130,8 +6184,8 @@ function openCourseBuilder() {
       <div class="field full"><label for="course-image">Image de couverture</label><input id="course-image" name="image" placeholder="https://... ou lien Google Drive partagé"><span class="tiny">Format conseillé : 1600 × 900 px, ratio 16:9, JPG/WebP, moins de 1 Mo. Les liens Drive partagés sont convertis automatiquement.</span></div>
       <div class="field full"><label for="course-description">Description</label><textarea id="course-description" name="description" required></textarea></div>
       <div class="field full"><label for="course-competencies">Compétences visées</label><textarea id="course-competencies" name="competencies" placeholder="Une compétence par ligne : comprendre, raisonner, appliquer, communiquer..."></textarea></div>
-      <div class="field"><label for="course-teacher">Enseignant</label><select id="course-teacher" name="teacherId">${teachers.map((teacher) => `<option value="${teacher.id}">${escapeHtml(teacher.name)}</option>`).join("")}</select></div>
-      <div class="field"><label for="course-status">Statut</label><select id="course-status" name="status"><option value="draft">Brouillon</option><option value="published">Publié</option></select></div>
+      <div class="field"><label for="course-teacher">Responsable pédagogique</label><select id="course-teacher" name="teacherId">${teachers.map((teacher) => `<option value="${teacher.id}">${escapeHtml(teacher.name)}${teacher.role === "teacher" ? ` · ${escapeHtml(teachingProfileLabel(teacher))}` : ""}</option>`).join("")}</select></div>
+      <div class="field"><label for="course-status">Statut</label><select id="course-status" name="status"><option value="draft">Brouillon</option><option value="published">${canPublishDirectly ? "Publié" : "Soumettre pour validation"}</option></select></div>
       <div class="field"><label for="course-catalog-type">Type de catalogue</label><select id="course-catalog-type" name="catalogType"><option value="school">École Numérique</option><option value="pro">Formation Pro</option></select></div>
       <div class="field"><label for="course-pro-audience">Public Formation Pro</label><select id="course-pro-audience" name="proAudience">${renderProAudienceOptions("")}</select></div>
       <div class="field"><label for="course-pro-category">Catégorie Formation Pro</label><select id="course-pro-category" name="proCategory">${renderProCategoryOptions("")}</select></div>
@@ -6178,14 +6232,16 @@ function openActivityBuilder(courseId) {
 function openUserEditor(userId) {
   const user = getUserById(userId);
   if (!user) return;
+  const teachingProfile = getTeachingProfile(user);
   openModal(`
     <h2>Modifier l'utilisateur</h2>
     <form id="admin-user-edit-form" data-user-id="${user.id}" class="form-grid" style="margin-top:18px">
       <div class="field"><label for="edit-user-name">Nom complet</label><input id="edit-user-name" name="name" value="${escapeHtml(user.name)}" required></div>
       <div class="field"><label for="edit-user-role">Profil</label><select id="edit-user-role" name="role"><option value="student" ${user.role === "student" ? "selected" : ""}>Apprenant</option><option value="teacher" ${user.role === "teacher" ? "selected" : ""}>Enseignant</option><option value="admin" ${user.role === "admin" ? "selected" : ""}>Administrateur</option></select></div>
+      <div class="field full"><label for="edit-user-teaching-profile">Profil pédagogique</label><select id="edit-user-teaching-profile" name="teachingProfile">${renderTeachingProfileOptions(teachingProfile || "school")}</select><span class="tiny">Utilisé pour savoir si l'utilisateur peut publier des cours scolaires, des formations pro, ou les deux.</span></div>
       <div class="field full"><label for="edit-user-email">Email</label><input id="edit-user-email" name="email" type="email" value="${escapeHtml(user.email)}" required></div>
       <div class="field full"><label for="edit-user-phone">Téléphone / WhatsApp</label><input id="edit-user-phone" name="phone" type="tel" value="${escapeHtml(user.phone || "")}" placeholder="+228 ..."></div>
-      <div class="field full"><label for="edit-user-password">Mot de passe</label><input id="edit-user-password" name="password" type="text" value="${escapeHtml(user.password)}" required></div>
+      <div class="field full"><label for="edit-user-password">Nouveau mot de passe</label><input id="edit-user-password" name="password" type="password" placeholder="Laisser vide pour conserver le mot de passe actuel"><span class="tiny">Remplissez seulement si vous voulez changer son mot de passe.</span></div>
       <div class="field full"><label for="edit-user-bio">Biographie</label><textarea id="edit-user-bio" name="bio">${escapeHtml(user.bio || "")}</textarea></div>
       <div class="field full"><button class="btn-primary" type="submit">Enregistrer</button></div>
     </form>
@@ -6211,8 +6267,8 @@ function openMyProfileEditor() {
 
 function openCourseEditor(courseId) {
   const course = getCourseById(courseId);
-  const teachers = state.users.filter((user) => user.role === "teacher");
   const actor = getCurrentUser();
+  const teachers = actor?.role === "teacher" ? [actor] : state.users.filter((user) => user.role === "teacher");
   const canPublishDirectly = actor?.role === "admin";
   if (!course) return;
   openModal(`
@@ -6230,7 +6286,7 @@ function openCourseEditor(courseId) {
       <div class="field full"><label for="edit-course-image">Image</label><input id="edit-course-image" name="image" value="${escapeHtml(course.image || "")}" placeholder="https://... ou lien Google Drive partagé"><span class="tiny">Format conseillé : 1600 × 900 px, ratio 16:9, JPG/WebP, moins de 1 Mo. Les liens Drive partagés sont convertis automatiquement.</span></div>
       <div class="field full"><label for="edit-course-description">Description</label><textarea id="edit-course-description" name="description" required>${escapeHtml(course.description)}</textarea></div>
       <div class="field full"><label for="edit-course-competencies">Compétences visées</label><textarea id="edit-course-competencies" name="competencies" placeholder="Une compétence par ligne">${escapeHtml((course.competencies || []).join("\n"))}</textarea></div>
-      <div class="field"><label for="edit-course-teacher">Enseignant</label><select id="edit-course-teacher" name="teacherId">${teachers.map((teacher) => `<option value="${teacher.id}" ${teacher.id === course.teacherId ? "selected" : ""}>${escapeHtml(teacher.name)}</option>`).join("")}</select></div>
+      <div class="field"><label for="edit-course-teacher">Responsable pédagogique</label><select id="edit-course-teacher" name="teacherId">${teachers.map((teacher) => `<option value="${teacher.id}" ${teacher.id === course.teacherId ? "selected" : ""}>${escapeHtml(teacher.name)}${teacher.role === "teacher" ? ` · ${escapeHtml(teachingProfileLabel(teacher))}` : ""}</option>`).join("")}</select></div>
       <div class="field"><label for="edit-course-status">Statut</label><select id="edit-course-status" name="status"><option value="draft" ${course.status === "draft" ? "selected" : ""}>Brouillon</option><option value="published" ${course.status === "published" || course.status === "pending_review" ? "selected" : ""}>${canPublishDirectly ? "Publié" : "Soumettre pour validation"}</option></select></div>
       <div class="field"><label for="edit-course-catalog-type">Type de catalogue</label><select id="edit-course-catalog-type" name="catalogType"><option value="school" ${(course.catalogType || "school") === "school" ? "selected" : ""}>École Numérique</option><option value="pro" ${course.catalogType === "pro" ? "selected" : ""}>Formation Pro</option></select></div>
       <div class="field"><label for="edit-course-pro-audience">Public Formation Pro</label><select id="edit-course-pro-audience" name="proAudience">${renderProAudienceOptions(course.proAudience || "")}</select></div>
@@ -7588,7 +7644,9 @@ async function handleRegister(event) {
       id: crypto.randomUUID(), name, email,
       phone,
       password: await secureLocalPassword(password),
-      role, bio: "Nouveau compte plateforme.", avatar: initials(name),
+      role,
+      teachingProfile: normalizeTeachingProfile("school", role),
+      bio: "Nouveau compte plateforme.", avatar: initials(name),
       createdAt: nowISO(),
       approvalStatus: "approved"
     };
@@ -7716,9 +7774,16 @@ async function handleCourseCreate(event) {
   const catalogType = String(formData.get("catalogType") || (category === "Formation Pro" ? "pro" : "school"));
   const actor = getCurrentUser();
   const isAdmin = actor?.role === "admin";
+  if (!canTeachCatalogType(actor, catalogType)) {
+    alert(catalogType === "pro"
+      ? "Votre profil actuel ne permet pas de publier une formation professionnelle. Demandez à l'admin de vous classer comme formateur professionnel ou enseignant-formateur."
+      : "Votre profil actuel ne permet pas de publier un cours scolaire. Demandez à l'admin de vous classer comme enseignant scolaire ou enseignant-formateur.");
+    return;
+  }
   // Un enseignant soumet pour validation, seul un admin peut publier directement
   const requestedStatus = String(formData.get("status"));
   const finalStatus = isAdmin ? requestedStatus : (requestedStatus === "published" ? "pending_review" : requestedStatus);
+  const selectedTeacherId = isAdmin ? String(formData.get("teacherId")) : actor.id;
 
   const newCourse = {
     id: crypto.randomUUID(),
@@ -7731,7 +7796,7 @@ async function handleCourseCreate(event) {
     description: String(formData.get("description")).trim(),
     competencies: normalizeCompetencies(String(formData.get("competencies") || ""), { catalogType }),
     image: String(formData.get("image")).trim() || "https://images.unsplash.com/photo-1516321318423-f06f85e504b3?auto=format&fit=crop&w=1200&q=80",
-    teacherId: String(formData.get("teacherId")),
+    teacherId: selectedTeacherId,
     status: finalStatus,
     audience: String(formData.get("audience")).trim(),
     duration: String(formData.get("duration")).trim(),
@@ -7780,11 +7845,18 @@ async function handleCourseEdit(event) {
   const isAdmin = actor?.role === "admin";
   const requestedStatus = String(formData.get("status")).trim();
   const nextStatus = isAdmin ? requestedStatus : (requestedStatus === "published" ? "pending_review" : requestedStatus);
+  const nextCatalogType = String(formData.get("catalogType") || (String(formData.get("category")).trim() === "Formation Pro" ? "pro" : "school"));
+  if (!canTeachCatalogType(actor, nextCatalogType)) {
+    alert(nextCatalogType === "pro"
+      ? "Votre profil actuel ne permet pas de publier une formation professionnelle. Demandez à l'admin de vous classer comme formateur professionnel ou enseignant-formateur."
+      : "Votre profil actuel ne permet pas de publier un cours scolaire. Demandez à l'admin de vous classer comme enseignant scolaire ou enseignant-formateur.");
+    return;
+  }
   const wasPendingReview = course.status === "pending_review";
   course.title = String(formData.get("title")).trim();
   course.category = String(formData.get("category")).trim();
   course.level = String(formData.get("level") || "").trim();
-  course.catalogType = String(formData.get("catalogType") || (course.category === "Formation Pro" ? "pro" : "school"));
+  course.catalogType = nextCatalogType;
   course.proAudience = course.catalogType === "pro" ? String(formData.get("proAudience") || "teachers").trim() : "";
   course.proCategory = course.catalogType === "pro" ? String(formData.get("proCategory") || "CAT 1").trim() : "";
   course.price = Number(formData.get("price")) || course.price || 0;
@@ -7794,7 +7866,7 @@ async function handleCourseEdit(event) {
   course.image = String(formData.get("image")).trim();
   course.description = String(formData.get("description")).trim();
   course.competencies = normalizeCompetencies(String(formData.get("competencies") || ""), course);
-  course.teacherId = String(formData.get("teacherId")).trim();
+  course.teacherId = isAdmin ? String(formData.get("teacherId")).trim() : actor.id;
   course.status = nextStatus;
   if (shouldUseSupabasePersistence()) {
     try {
@@ -8892,6 +8964,7 @@ async function handleAdminUserCreate(event) {
     id: crypto.randomUUID(),
     name, email, phone, role,
     password: await secureLocalPassword(password),
+    teachingProfile: normalizeTeachingProfile("school", role),
     bio: "Compte créé par l'administration.",
     avatar: initials(name),
     createdAt: nowISO(),
@@ -8918,6 +8991,7 @@ async function handleAdminUserEdit(event) {
     user.password = await secureLocalPassword(nextPassword);
   }
   user.role = String(formData.get("role")).trim();
+  user.teachingProfile = normalizeTeachingProfile(formData.get("teachingProfile"), user.role);
   user.bio = String(formData.get("bio")).trim();
   user.avatar = initials(user.name);
   addLog(getCurrentUser().id, `Utilisateur modifié - ${user.name}`);

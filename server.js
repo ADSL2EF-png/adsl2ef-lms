@@ -281,7 +281,7 @@ const defaultState = {
 
 const demoUsers = [
   { name: "Admin ADSL-2EF", email: "admin@adsl2ef.tg", phone: "+228 93 76 76 21", role: "admin", bio: "Supervision globale de la plateforme.", avatar: "AA", password: "Admin123!" },
-  { name: "Afi Mensah", email: "teacher@adsl2ef.tg", role: "teacher", bio: "Enseignante de mathématiques et coordinatrice numérique.", avatar: "AM", password: "Teacher123!" },
+  { name: "Afi Mensah", email: "teacher@adsl2ef.tg", role: "teacher", teachingProfile: "both", bio: "Enseignante de mathématiques et coordinatrice numérique.", avatar: "AM", password: "Teacher123!" },
   { name: "Kodjo Etse", email: "student@adsl2ef.tg", role: "student", bio: "Élève de première scientifique.", avatar: "KE", password: "Student123!" }
 ];
 
@@ -415,6 +415,7 @@ function sanitizeUser(user) {
     email: user.email,
     phone: user.phone || "",
     role: user.role,
+    teachingProfile: normalizeTeachingProfile(user.teachingProfile || user.teaching_profile, user.role),
     bio: user.bio || "",
     avatar: user.avatar || "",
     createdAt: user.createdAt
@@ -445,8 +446,21 @@ function normalizePublicRegistrationRole(role) {
   return value === "teacher" ? "teacher" : "student";
 }
 
+function normalizeTeachingProfile(value, role = "teacher") {
+  if (role !== "teacher") return "";
+  const normalized = String(value || "").trim();
+  return ["school", "pro", "both"].includes(normalized) ? normalized : "school";
+}
+
 function ensureArray(value) {
   return Array.isArray(value) ? value : [];
+}
+
+function normalizeStateUsers(users) {
+  return ensureArray(users).map((user) => ({
+    ...user,
+    teachingProfile: normalizeTeachingProfile(user.teachingProfile || user.teaching_profile, user.role)
+  }));
 }
 
 function normalizePaymentStatus(status) {
@@ -531,6 +545,7 @@ async function ensureDataFiles() {
       email: user.email,
       phone: user.phone || "",
       role: user.role,
+      teachingProfile: normalizeTeachingProfile(user.teachingProfile, user.role),
       bio: user.bio,
       avatar: user.avatar,
       createdAt: new Date().toISOString(),
@@ -550,7 +565,7 @@ async function loadState() {
   if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
     const sbState = await loadStateFromSupabase();
     if (sbState) {
-      sbState.users = ensureArray(sbState.users);
+      sbState.users = normalizeStateUsers(sbState.users);
       sbState.courses = ensureArray(sbState.courses);
       sbState.activities = ensureArray(sbState.activities);
       sbState.questionBank = ensureArray(sbState.questionBank);
@@ -574,7 +589,7 @@ async function loadState() {
   await ensureDataFiles();
   const raw = await fsp.readFile(STATE_FILE, "utf8");
   const parsed = JSON.parse(raw);
-  parsed.users = ensureArray(parsed.users);
+  parsed.users = normalizeStateUsers(parsed.users);
   parsed.courses = ensureArray(parsed.courses);
   parsed.activities = ensureArray(parsed.activities);
   parsed.questionBank = ensureArray(parsed.questionBank);
@@ -726,7 +741,7 @@ async function loadProfileByAuthUserId(authUserId) {
   }
 }
 
-async function upsertSupabaseProfile({ authUserId, email, name, phone = "", role, bio = "", avatar, approvalStatus }) {
+async function upsertSupabaseProfile({ authUserId, email, name, phone = "", role, teachingProfile = "", bio = "", avatar, approvalStatus }) {
   const createdAt = new Date().toISOString();
   try {
     await postProfileWithColumnFallback("/profiles?on_conflict=auth_user_id", {
@@ -735,6 +750,7 @@ async function upsertSupabaseProfile({ authUserId, email, name, phone = "", role
       email,
       phone,
       role,
+      teaching_profile: normalizeTeachingProfile(teachingProfile, role),
       bio,
       avatar,
       approval_status: approvalStatus,
@@ -749,6 +765,7 @@ async function upsertSupabaseProfile({ authUserId, email, name, phone = "", role
       email,
       phone,
       role,
+      teaching_profile: normalizeTeachingProfile(teachingProfile, role),
       bio,
       avatar,
       approval_status: approvalStatus,
@@ -1116,6 +1133,7 @@ async function handleLogin(request, response) {
           name: displayName,
           phone,
           role,
+          teachingProfile: normalizeTeachingProfile(authData.user.user_metadata?.teachingProfile, role),
           avatar,
           approvalStatus: "approved"
         });
@@ -1130,6 +1148,7 @@ async function handleLogin(request, response) {
         email: authData.user.email || email,
         phone,
         role,
+        teaching_profile: normalizeTeachingProfile(authData.user.user_metadata?.teachingProfile, role),
         bio: "",
         avatar,
         approval_status: "approved",
@@ -1145,6 +1164,7 @@ async function handleLogin(request, response) {
           email: authData.user.email || email,
           phone: profile?.phone || phone,
           role: profile?.role || role,
+          teachingProfile: normalizeTeachingProfile(profile?.teaching_profile, profile?.role || role),
           bio: profile?.bio || "",
           avatar: profile?.avatar || avatar,
           approvalStatus: "approved",
@@ -1170,6 +1190,7 @@ async function handleLogin(request, response) {
       email: authData.user.email,
       phone: profile.phone || authData.user.user_metadata?.phone || "",
       role: profile.role || "student",
+      teachingProfile: normalizeTeachingProfile(profile.teaching_profile || authData.user.user_metadata?.teachingProfile, profile.role || "student"),
       bio: profile.bio || "",
       avatar: profile.avatar || "",
       approvalStatus: profile.approval_status
@@ -1237,7 +1258,7 @@ async function handleRegister(request, response) {
         email,
         password,
         email_confirm: true,
-        user_metadata: { name, phone, role }
+        user_metadata: { name, phone, role, teachingProfile: normalizeTeachingProfile("school", role) }
       })
     });
     const userData = await createRes.json();
@@ -1261,7 +1282,7 @@ async function handleRegister(request, response) {
         });
         return;
       }
-      createdAuthUser = await updateSupabaseAuthUser(existingAuthUser.id, { email, password, name, phone, role });
+      createdAuthUser = await updateSupabaseAuthUser(existingAuthUser.id, { email, password, name, phone, role, teachingProfile: normalizeTeachingProfile("school", role) });
     } else {
       createdAuthUser = userData.user || userData;
     }
@@ -1275,7 +1296,7 @@ async function handleRegister(request, response) {
     // 2. Créer le profil dans profiles avec approval_status = approved
     const avatar = name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
     try {
-      await upsertSupabaseProfile({ authUserId: userId, email, name, phone, role, avatar, approvalStatus: "approved" });
+      await upsertSupabaseProfile({ authUserId: userId, email, name, phone, role, teachingProfile: normalizeTeachingProfile("school", role), avatar, approvalStatus: "approved" });
     } catch (profileError) {
       console.warn("Supabase profile creation ignored:", profileError);
     }
@@ -1287,6 +1308,7 @@ async function handleRegister(request, response) {
       email,
       phone,
       role,
+      teachingProfile: normalizeTeachingProfile("school", role),
       bio: "",
       avatar,
       passwordHash: createPasswordHash(password),
@@ -1369,11 +1391,11 @@ async function findSupabaseAuthUserByEmail(email) {
   return (usersData.users || []).find((user) => String(user.email || "").toLowerCase() === email) || null;
 }
 
-async function updateSupabaseAuthUser(userId, { email, password, name, phone, role }) {
+async function updateSupabaseAuthUser(userId, { email, password, name, phone, role, teachingProfile }) {
   const payload = {
     email,
     email_confirm: true,
-    user_metadata: { name, phone: phone || "", role }
+    user_metadata: { name, phone: phone || "", role, teachingProfile: normalizeTeachingProfile(teachingProfile, role) }
   };
   if (password) payload.password = password;
 
@@ -1419,7 +1441,7 @@ async function handleAdminCreateUser(request, response) {
       body: JSON.stringify({
         email, password,
         email_confirm: true,
-        user_metadata: { name, phone, role }
+        user_metadata: { name, phone, role, teachingProfile: normalizeTeachingProfile("school", role) }
       })
     });
     const userData = await createRes.json();
@@ -1444,13 +1466,14 @@ async function handleAdminCreateUser(request, response) {
     const avatar = name.split(" ").filter(Boolean).slice(0, 2).map((w) => w[0]?.toUpperCase()).join("");
 
     // 2. Créer/mettre à jour le profil avec approval_status = approved
-    await upsertSupabaseProfile({ authUserId: userId, email, name, phone, role, avatar, approvalStatus: "approved" });
+    await upsertSupabaseProfile({ authUserId: userId, email, name, phone, role, teachingProfile: normalizeTeachingProfile("school", role), avatar, approvalStatus: "approved" });
 
     // 3. Ajouter dans lms_state pour que le dashboard admin le voit immédiatement
     const state = await loadState();
     const existingIdx = state.users.findIndex((u) => u.email.toLowerCase() === email || u.id === userId);
     const newUser = {
       id: userId, name, email, phone, role,
+      teachingProfile: normalizeTeachingProfile("school", role),
       bio: "", avatar,
       createdAt: new Date().toISOString(),
       approvalStatus: "approved"
@@ -1502,6 +1525,7 @@ async function handleGetProfiles(request, response) {
         email: profile.email || authUser.email || "",
         phone: profile.phone || authUser.user_metadata?.phone || "",
         role: profile.role || authUser.user_metadata?.role || "student",
+        teachingProfile: normalizeTeachingProfile(profile.teaching_profile || authUser.user_metadata?.teachingProfile, profile.role || authUser.user_metadata?.role || "student"),
         bio: profile.bio || "",
         avatar: profile.avatar || name.split(" ").filter(Boolean).slice(0, 2).map((word) => word[0]?.toUpperCase()).join(""),
         approvalStatus: profile.approval_status || "approved",
@@ -1517,6 +1541,7 @@ async function handleGetProfiles(request, response) {
         email: profile.email || "",
         phone: profile.phone || "",
         role: profile.role || "student",
+        teachingProfile: normalizeTeachingProfile(profile.teaching_profile, profile.role || "student"),
         bio: profile.bio || "",
         avatar: profile.avatar || "",
         approvalStatus: profile.approval_status || "approved",
@@ -1569,6 +1594,7 @@ async function handleCurrentSession(request, response) {
         email: userData.email,
         phone: profile?.phone || userData.user_metadata?.phone || "",
         role: profile?.role || "student",
+        teachingProfile: normalizeTeachingProfile(profile?.teaching_profile || userData.user_metadata?.teachingProfile, profile?.role || "student"),
         bio: profile?.bio || "",
         avatar: profile?.avatar || "",
         approvalStatus: profile?.approval_status || "pending"
@@ -1894,9 +1920,10 @@ async function applyEventToState(state, eventType, payload) {
     case "user.created":
     case "user.updated":
       if (payload.user) {
+        const existingUser = state.users.find((user) => user.id === payload.user.id || String(user.email || "").toLowerCase() === String(payload.user.email || "").toLowerCase());
         const merged = {
           ...payload.user,
-          passwordHash: payload.user.passwordHash || createPasswordHash(payload.user.password || "ChangeMe123!")
+          passwordHash: payload.user.passwordHash || existingUser?.passwordHash || createPasswordHash(payload.user.password || "ChangeMe123!")
         };
         delete merged.password;
         if (SUPABASE_URL && SUPABASE_SERVICE_KEY) {
@@ -1906,7 +1933,8 @@ async function applyEventToState(state, eventType, payload) {
             email: merged.email,
             name: merged.name,
             phone: merged.phone || "",
-            role: merged.role
+            role: merged.role,
+            teachingProfile: normalizeTeachingProfile(merged.teachingProfile, merged.role)
           }).catch((error) => console.warn("[Supabase] auth profile update ignored:", error.message));
           await upsertSupabaseProfile({
             authUserId,
@@ -1914,6 +1942,7 @@ async function applyEventToState(state, eventType, payload) {
             name: merged.name,
             phone: merged.phone || "",
             role: merged.role,
+            teachingProfile: normalizeTeachingProfile(merged.teachingProfile, merged.role),
             bio: merged.bio || "",
             avatar: merged.avatar || initials(merged.name),
             approvalStatus: merged.approvalStatus || "approved"
