@@ -7904,7 +7904,7 @@ async function submitLoginForm() {
   if (!form) return;
   if (shouldPreferFrameLogin()) {
     form.method = "POST";
-    form.action = buildApiFetchUrl("/auth/login-return");
+    form.action = "/auth/login-return";
     form.submit();
     return;
   }

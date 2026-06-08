@@ -3,7 +3,7 @@
  * VERSION : 2.0.0
  */
 
-const CACHE_NAME = "adsl2ef-v22-login-return";
+const CACHE_NAME = "adsl2ef-v23-login-return-local";
 const OFFLINE_URL = "/offline.html";
 
 const PRECACHE_ASSETS = [
