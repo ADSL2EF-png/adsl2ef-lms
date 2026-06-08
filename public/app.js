@@ -968,6 +968,9 @@ function buildApiFetchUrl(path) {
   if (!normalizedBase || normalizedBase === window.location.origin) return cleanPath;
   return buildApiUrl(normalizedBase, cleanPath);
 }
+function shouldPreferFrameLogin() {
+  return window.location.hostname.toLowerCase() === "lms.adsl2ef.org";
+}
 function xhrJsonRequest(url, options = {}) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -1201,16 +1204,20 @@ async function loginWithApi(email, password) {
   const persistence = getPersistenceConfig();
   let payload;
   try {
-    const response = await apiFetch(buildApiFetchUrl(persistence.authLoginPath), {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password })
-    });
-    payload = await response.json();
-    if (!response.ok) {
-      const err = new Error(payload?.error || payload?.message || `HTTP ${response.status}`);
-      err.status = response.status;
-      throw err;
+    if (shouldPreferFrameLogin()) {
+      payload = await loginWithFrameFallback(email, password);
+    } else {
+      const response = await apiFetch(buildApiFetchUrl(persistence.authLoginPath), {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password })
+      });
+      payload = await response.json();
+      if (!response.ok) {
+        const err = new Error(payload?.error || payload?.message || `HTTP ${response.status}`);
+        err.status = response.status;
+        throw err;
+      }
     }
   } catch (error) {
     if (String(error?.message || "").includes("network_") || error instanceof TypeError) {
