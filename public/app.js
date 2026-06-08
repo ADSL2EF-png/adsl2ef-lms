@@ -721,24 +721,24 @@ function applyEnvironmentPersistenceDefaults(nextState) {
   const hostname = window.location.hostname || "";
   const isProduction = hostname.includes("railway.app") || hostname.includes("adsl2ef");
   if (isProduction) {
-    // Toujours utiliser Railway en production, quelle que soit la config stockée
-    if (!currentPersistence.apiBaseUrl || currentPersistence.mode !== "api") {
-      nextState.config.persistence = {
-        ...currentPersistence,
-        mode: "api",
-        apiBaseUrl: "https://adsl2ef-lms-production.up.railway.app",
-        apiToken: "adsl2ef-prod-2ef8a3c7f1b94d2e6a05f8c3d7e1b9a4",
-        apiSnapshotPath: "/lms/state",
-        authLoginPath: "/auth/login",
-        authRegisterPath: "/auth/register",
-        authMePath: "/auth/me",
-        summaryPath: "/lms/summary",
-        eventsReadPath: "/lms/events",
-        operationsPath: "/lms/events",
-        paymentInitPath: "/payments/init",
-        paymentStatusPath: "/payments/status"
-      };
-    }
+    // En production, utiliser le domaine courant comme backend.
+    // Cela évite qu'un nouveau domaine garde un localStorage séparé pointant vers une ancienne origine.
+    nextState.config.persistence = {
+      ...currentPersistence,
+      mode: "api",
+      apiBaseUrl: window.location.origin,
+      apiToken: "adsl2ef-prod-2ef8a3c7f1b94d2e6a05f8c3d7e1b9a4",
+      healthPath: "/health",
+      apiSnapshotPath: "/lms/state",
+      authLoginPath: "/auth/login",
+      authRegisterPath: "/auth/register",
+      authMePath: "/auth/me",
+      summaryPath: "/lms/summary",
+      eventsReadPath: "/lms/events",
+      operationsPath: "/lms/events",
+      paymentInitPath: "/payments/init",
+      paymentStatusPath: "/payments/status"
+    };
     return nextState;
   }
 
