@@ -3040,7 +3040,7 @@ function renderLoginForm() {
     <form id="login-form" class="form-grid" style="margin-top:18px">
       <div class="field full"><label for="login-email">Email</label><input id="login-email" name="email" type="email" required placeholder="votre@email.com"></div>
       <div class="field full"><label for="login-password">Mot de passe</label><div class="password-control"><input id="login-password" name="password" type="password" required placeholder="Votre mot de passe"><button type="button" onclick="togglePasswordVisibility('login-password', this)">Voir</button></div></div>
-      <div class="field full"><button class="btn-primary" type="submit">Se connecter</button></div>
+      <div class="field full"><button class="btn-primary" type="button" onclick="submitLoginForm()">Se connecter</button></div>
     </form>
   `;
 }
@@ -7889,6 +7889,16 @@ async function handleBulkEnrollmentAssign(event) {
 async function handleLogin(event) {
   event.preventDefault();
   const formData = new FormData(event.currentTarget);
+  await processLoginFormData(formData);
+}
+
+async function submitLoginForm() {
+  const form = document.getElementById("login-form");
+  if (!form) return;
+  await processLoginFormData(new FormData(form));
+}
+
+async function processLoginFormData(formData) {
   const email = String(formData.get("email")).trim().toLowerCase();
   const password = String(formData.get("password"));
   const loginLimit = getLoginRateLimitState(email);
@@ -9483,6 +9493,7 @@ async function initializeApp() {
 initializeApp();
 
 window.showAuthModal = showAuthModal;
+window.submitLoginForm = submitLoginForm;
 window.logout = logout;
 window.setScreen = setScreen;
 window.setSchoolCategory = setSchoolCategory;
