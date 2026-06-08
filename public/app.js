@@ -995,6 +995,55 @@ async function apiFetch(url, options = {}) {
     return xhrJsonRequest(url, options);
   }
 }
+function loginWithFrameFallback(email, password) {
+  return new Promise((resolve, reject) => {
+    const frameName = `adsl2ef-login-frame-${Date.now()}`;
+    const iframe = document.createElement("iframe");
+    const form = document.createElement("form");
+    const cleanup = () => {
+      window.removeEventListener("message", onMessage);
+      iframe.remove();
+      form.remove();
+      clearTimeout(timer);
+    };
+    const onMessage = (event) => {
+      if (event.origin !== window.location.origin) return;
+      if (event.data?.type !== "adsl2ef-login-frame") return;
+      cleanup();
+      const payload = event.data.payload || {};
+      if (!payload.ok) {
+        const error = new Error(payload.message || payload.error || "Identifiants invalides.");
+        error.status = payload.error;
+        reject(error);
+        return;
+      }
+      resolve(payload);
+    };
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error("network_timeout"));
+    }, 20000);
+    window.addEventListener("message", onMessage);
+    iframe.name = frameName;
+    iframe.style.display = "none";
+    form.method = "POST";
+    form.action = buildApiFetchUrl("/auth/login-frame");
+    form.target = frameName;
+    form.style.display = "none";
+    [
+      ["email", email],
+      ["password", password]
+    ].forEach(([name, value]) => {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = name;
+      input.value = value;
+      form.appendChild(input);
+    });
+    document.body.append(iframe, form);
+    form.submit();
+  });
+}
 function getSupabaseConfig() {
   return {
     ...structuredClone(starterData).config.supabase,
@@ -1150,16 +1199,25 @@ function applyApiSession(user, payload, provider = "api") {
 
 async function loginWithApi(email, password) {
   const persistence = getPersistenceConfig();
-  const response = await apiFetch(buildApiFetchUrl(persistence.authLoginPath), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ email, password })
-  });
-  const payload = await response.json();
-  if (!response.ok) {
-    const err = new Error(payload?.error || payload?.message || `HTTP ${response.status}`);
-    err.status = response.status;
-    throw err;
+  let payload;
+  try {
+    const response = await apiFetch(buildApiFetchUrl(persistence.authLoginPath), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email, password })
+    });
+    payload = await response.json();
+    if (!response.ok) {
+      const err = new Error(payload?.error || payload?.message || `HTTP ${response.status}`);
+      err.status = response.status;
+      throw err;
+    }
+  } catch (error) {
+    if (String(error?.message || "").includes("network_") || error instanceof TypeError) {
+      payload = await loginWithFrameFallback(email, password);
+    } else {
+      throw error;
+    }
   }
   const user = normalizeRemoteUser(payload);
   if (!user) throw new Error("missing user payload");

@@ -1166,6 +1166,24 @@ async function handleHealth(_request, response) {
   });
 }
 
+async function readTextBody(request) {
+  return new Promise((resolve, reject) => {
+    let data = "";
+    let size = 0;
+    request.on("data", (chunk) => {
+      size += chunk.length;
+      if (size > BODY_SIZE_LIMIT) {
+        request.destroy();
+        reject(new Error("payload_too_large"));
+        return;
+      }
+      data += chunk;
+    });
+    request.on("end", () => resolve(data));
+    request.on("error", reject);
+  });
+}
+
 async function handleSupabaseDebug(request, response) {
   if (!requireBearer(request, response)) return;
   const result = {
@@ -1347,6 +1365,30 @@ async function handleLogin(request, response) {
     console.error("Login error:", err);
     json(response, 500, { error: "internal_error", message: "Erreur de connexion." });
   }
+}
+
+async function handleLoginFrame(request, response) {
+  const raw = await readTextBody(request);
+  const form = new URLSearchParams(raw);
+  const email = String(form.get("email") || "").trim().toLowerCase();
+  const password = String(form.get("password") || "");
+  const state = await loadState();
+  const user = state.users.find((item) => String(item.email || "").toLowerCase() === email);
+  let payload;
+  if (!user || !verifyPassword(password, user.passwordHash)) {
+    payload = { ok: false, error: "invalid_credentials", message: "Identifiants invalides." };
+  } else if (user.approvalStatus === "rejected") {
+    payload = { ok: false, error: "rejected", message: "Votre demande d'accès a été refusée." };
+  } else {
+    payload = { ok: true, accessToken: signToken(user), user: sanitizeUser(user) };
+  }
+  const html = `<!doctype html><html><head><meta charset="utf-8"></head><body><script>parent.postMessage(${JSON.stringify({ type: "adsl2ef-login-frame", payload })}, "*");</script></body></html>`;
+  response.writeHead(200, {
+    "Content-Type": "text/html; charset=utf-8",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer"
+  });
+  response.end(html);
 }
 
 async function handleRegister(request, response) {
@@ -2168,6 +2210,7 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "PUT" && pathname === "/lms/state") return await handlePutState(request, response);
     if (request.method === "POST" && pathname === "/admin/repair-encoding") return await handleRepairEncoding(request, response);
     if (request.method === "POST" && pathname === "/auth/login") return await handleLogin(request, response);
+    if (request.method === "POST" && pathname === "/auth/login-frame") return await handleLoginFrame(request, response);
     if (request.method === "POST" && pathname === "/auth/register") return await handleRegister(request, response);
     if (request.method === "POST" && pathname === "/auth/approve") return await handleApproveUser(request, response);
     if (request.method === "POST" && pathname === "/auth/admin/create") return await handleAdminCreateUser(request, response);
