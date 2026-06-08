@@ -3,7 +3,7 @@
  * VERSION : 2.0.0
  */
 
-const CACHE_NAME = "adsl2ef-v16-live-classes";
+const CACHE_NAME = "adsl2ef-v17-domain-login";
 const OFFLINE_URL = "/offline.html";
 
 const PRECACHE_ASSETS = [
