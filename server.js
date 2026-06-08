@@ -481,6 +481,112 @@ function normalizePaymentProvider(provider) {
   return "";
 }
 
+function repairFrenchEncodingText(value) {
+  if (typeof value !== "string") return value;
+  const replacements = [
+    ["DIPLOM�S", "DIPLÔMÉS"],
+    ["ENGAG�S", "ENGAGÉS"],
+    ["L EDUCATION", "L'ÉDUCATION"],
+    ["� Association", "· Association"],
+    ["agr��e", "agréée"],
+    ["� R�publique", "· République"],
+    ["Lom�", "Lomé"],
+    ["ma�triser", "maîtriser"],
+    ["p�dagogiques", "pédagogiques"],
+    ["p�dagogique", "pédagogique"],
+    ["d�velopperont", "développeront"],
+    ["d�velopper", "développer"],
+    ["d�veloppement", "développement"],
+    ["comp�tences", "compétences"],
+    ["comp�tence", "compétence"],
+    ["n�cessaires", "nécessaires"],
+    ["d�couvriront", "découvriront"],
+    ["d�couvrir", "découvrir"],
+    ["diff�renciation", "différenciation"],
+    ["�valuation", "évaluation"],
+    ["�valuations", "évaluations"],
+    ["crit�ri�e", "critériée"],
+    ["th�orie", "théorie"],
+    ["�tudes", "études"],
+    ["� l'issue", "À l'issue"],
+    ["� travers", "à travers"],
+    ["� la", "à la"],
+    ["�t�", "été"],
+    ["�tes", "êtes"],
+    ["unit�s", "unités"],
+    ["s�quences", "séquences"],
+    ["�laborer", "Élaborer"],
+    ["unit�", "unité"],
+    ["cr�er", "créer"],
+    ["Int�grer", "Intégrer"],
+    ["�l�ves", "élèves"],
+    ["am�liorer", "améliorer"],
+    ["r�ussite", "réussite"],
+    ["mani�re", "manière"],
+    ["�thique", "éthique"],
+    ["efficacit�", "efficacité"],
+    ["t�ches", "tâches"],
+    ["r�p�titives", "répétitives"],
+    ["v�ritable", "véritable"],
+    ["pr�parer", "préparer"],
+    ["r�duisant", "réduisant"],
+    ["consacr�", "consacré"],
+    ["r�daction", "rédaction"],
+    ["gr�ce", "grâce"],
+    ["r�sultats", "résultats"],
+    ["activit�s", "activités"],
+    ["li�s", "liés"],
+    ["�ducation", "éducation"],
+    ["�cole", "école"],
+    ["donn�es", "données"],
+    ["num�riques", "numériques"],
+    ["num�rique", "numérique"],
+    ["mettre en ouvre", "mettre en oeuvre"],
+    ["Dipl??me", "Diplôme"],
+    ["Dipl�me", "Diplôme"],
+    ["compr�hension", "compréhension"],
+    ["le�ons", "leçons"],
+    ["Le�on", "Leçon"],
+    ["pr�paration", "préparation"],
+    ["interpr�tation", "interprétation"],
+    ["m�thodes", "méthodes"],
+    ["exp�rimentales", "expérimentales"],
+    ["Pens�e", "Pensée"],
+    ["r�solution", "résolution"],
+    ["probl�mes", "problèmes"],
+    ["D�marrage", "Démarrage"],
+    ["g�n�r�", "généré"],
+    ["d�part", "départ"],
+    ["publi�", "publié"],
+    ["valid�", "validé"],
+    ["pr????t", "prêt"],
+    ["pr�t", "prêt"],
+    ["confirm�e", "confirmée"],
+    ["acc�s", "accès"],
+    ["ajout�e", "ajoutée"],
+    ["ajout�", "ajouté"],
+    ["termin�e", "terminée"],
+    ["cr��", "créé"],
+    ["modifi??", "modifié"],
+    ["modifi�", "modifié"],
+    ["supprim�", "supprimé"],
+    ["Connexion ??", "Connexion à"],
+    [" a ete ajoute", " a été ajouté"]
+  ];
+  return replacements.reduce((text, [from, to]) => text.split(from).join(to), value);
+}
+
+function repairFrenchEncodingDeep(value) {
+  if (typeof value === "string") return repairFrenchEncodingText(value);
+  if (Array.isArray(value)) return value.map((item) => repairFrenchEncodingDeep(item));
+  if (value && typeof value === "object") {
+    Object.keys(value).forEach((key) => {
+      value[key] = repairFrenchEncodingDeep(value[key]);
+    });
+  }
+  return value;
+}
+
 function extractPaymentUrl(payload) {
   if (!payload || typeof payload !== "object") return "";
   return payload.paymentUrl
@@ -1753,6 +1859,15 @@ async function handleSummary(request, response) {
   });
 }
 
+async function handleRepairEncoding(request, response) {
+  if (!requireBearer(request, response)) return;
+  const state = await loadState();
+  repairFrenchEncodingDeep(state);
+  await saveState(state);
+  await appendEvent({ type: "admin.encoding.repaired", createdAt: new Date().toISOString(), payload: { repaired: true } });
+  json(response, 200, { ok: true });
+}
+
 async function handleEvents(request, response) {
   if (!requireBearer(request, response)) return;
   await ensureDataFiles();
@@ -2014,6 +2129,7 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && pathname === "/payments/status") return await handlePaymentStatus(request, response);
     if (request.method === "GET" && pathname === "/auth/users") return await handleGetProfiles(request, response);
     if (request.method === "PUT" && pathname === "/lms/state") return await handlePutState(request, response);
+    if (request.method === "POST" && pathname === "/admin/repair-encoding") return await handleRepairEncoding(request, response);
     if (request.method === "POST" && pathname === "/auth/login") return await handleLogin(request, response);
     if (request.method === "POST" && pathname === "/auth/register") return await handleRegister(request, response);
     if (request.method === "POST" && pathname === "/auth/approve") return await handleApproveUser(request, response);
