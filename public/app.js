@@ -968,6 +968,33 @@ function buildApiFetchUrl(path) {
   if (!normalizedBase || normalizedBase === window.location.origin) return cleanPath;
   return buildApiUrl(normalizedBase, cleanPath);
 }
+function xhrJsonRequest(url, options = {}) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(options.method || "GET", url, true);
+    Object.entries(options.headers || {}).forEach(([key, value]) => xhr.setRequestHeader(key, value));
+    xhr.onload = () => {
+      resolve({
+        ok: xhr.status >= 200 && xhr.status < 300,
+        status: xhr.status,
+        json: async () => (xhr.responseText ? JSON.parse(xhr.responseText) : null),
+        text: async () => xhr.responseText || ""
+      });
+    };
+    xhr.onerror = () => reject(new Error("network_error"));
+    xhr.ontimeout = () => reject(new Error("network_timeout"));
+    xhr.timeout = options.timeout || 20000;
+    xhr.send(options.body);
+  });
+}
+async function apiFetch(url, options = {}) {
+  try {
+    return await fetch(url, options);
+  } catch (error) {
+    console.warn("Fetch failed, retrying with XHR:", error);
+    return xhrJsonRequest(url, options);
+  }
+}
 function getSupabaseConfig() {
   return {
     ...structuredClone(starterData).config.supabase,
@@ -1062,7 +1089,7 @@ async function apiRequest(path, options = {}) {
     const headers = options.skipAuth
       ? { "Content-Type": "application/json", ...(options.headers || {}) }
       : { ...getApiHeaders(), ...(options.headers || {}) };
-    const response = await fetch(buildApiFetchUrl(path), {
+    const response = await apiFetch(buildApiFetchUrl(path), {
       method: options.method || "GET",
       headers,
       body: options.body ? JSON.stringify(options.body) : undefined
@@ -1123,7 +1150,7 @@ function applyApiSession(user, payload, provider = "api") {
 
 async function loginWithApi(email, password) {
   const persistence = getPersistenceConfig();
-  const response = await fetch(buildApiFetchUrl(persistence.authLoginPath), {
+  const response = await apiFetch(buildApiFetchUrl(persistence.authLoginPath), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email, password })
@@ -1142,7 +1169,7 @@ async function loginWithApi(email, password) {
 async function registerWithApi({ name, email, phone, password, role }) {
   const persistence = getPersistenceConfig();
   // Route publique — pas de token API
-  const response = await fetch(buildApiFetchUrl(persistence.authRegisterPath), {
+  const response = await apiFetch(buildApiFetchUrl(persistence.authRegisterPath), {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ name, email, phone, password, role })
@@ -2184,7 +2211,7 @@ async function publishPlatformEvent(type, payload = {}) {
   const persistence = getPersistenceConfig();
   if (!shouldUseApiPersistence()) return;
   try {
-    const response = await fetch(buildApiFetchUrl(persistence.operationsPath), {
+    const response = await apiFetch(buildApiFetchUrl(persistence.operationsPath), {
       method: "POST",
       headers: getApiHeaders(true), // token API
       body: JSON.stringify({
@@ -2224,7 +2251,7 @@ async function loadStateFromApi() {
     const localCurrentUserId = state.currentUserId;
     const localSession = { ...(state.session || {}) };
     // Charger l'état LMS
-    const response = await fetch(buildApiFetchUrl(persistence.apiSnapshotPath), {
+    const response = await apiFetch(buildApiFetchUrl(persistence.apiSnapshotPath), {
       method: "GET",
       headers: getApiHeaders(true)
     });
@@ -2240,7 +2267,7 @@ async function loadStateFromApi() {
 
     // Charger les utilisateurs depuis Supabase profiles
     try {
-      const usersRes = await fetch(buildApiFetchUrl("/auth/users"), {
+      const usersRes = await apiFetch(buildApiFetchUrl("/auth/users"), {
         headers: getApiHeaders(true)
       });
       if (usersRes.ok) {
@@ -2269,7 +2296,7 @@ async function syncApiSnapshot() {
   const persistence = getPersistenceConfig();
   if (persistence.mode !== "api" || !persistence.apiBaseUrl) return;
   try {
-    const response = await fetch(buildApiFetchUrl(persistence.apiSnapshotPath), {
+    const response = await apiFetch(buildApiFetchUrl(persistence.apiSnapshotPath), {
       method: "PUT",
       headers: getApiHeaders(true), // token API
       body: JSON.stringify({ source: "adsl2ef-platform", exportedAt: nowISO(), payload: buildApiSafeSnapshot(state) })
@@ -5148,7 +5175,7 @@ async function approveUser(userId) {
   // Mettre à jour directement dans Supabase via la route dédiée
   const persistence = getPersistenceConfig();
   try {
-    await fetch(buildApiFetchUrl("/auth/approve"), {
+    await apiFetch(buildApiFetchUrl("/auth/approve"), {
       method: "POST",
       headers: getApiHeaders(true),
       body: JSON.stringify({ userId, action: "approve" })
@@ -5168,7 +5195,7 @@ async function rejectUser(userId) {
   persistState(state);
   const persistence = getPersistenceConfig();
   try {
-    await fetch(buildApiFetchUrl("/auth/approve"), {
+    await apiFetch(buildApiFetchUrl("/auth/approve"), {
       method: "POST",
       headers: getApiHeaders(true),
       body: JSON.stringify({ userId, action: "reject" })
@@ -9250,7 +9277,7 @@ async function handleAdminUserCreate(event) {
   if (shouldUseApiPersistence() && persistence.apiBaseUrl) {
     // Créer via la route admin Railway → Supabase
     try {
-      const res = await fetch(buildApiFetchUrl("/auth/admin/create"), {
+      const res = await apiFetch(buildApiFetchUrl("/auth/admin/create"), {
         method: "POST",
         headers: getApiHeaders(true),
         body: JSON.stringify({ name, email, phone, password, role })
