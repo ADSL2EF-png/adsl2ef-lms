@@ -441,6 +441,10 @@ function sanitizeSharedState(state) {
   };
 }
 
+function safeInlineJson(value) {
+  return JSON.stringify(value).replace(/</g, "\\u003c");
+}
+
 function preserveUserPasswordHashes(nextState, previousState) {
   const previousUsers = ensureArray(previousState?.users);
   nextState.users = ensureArray(nextState.users).map((user) => {
@@ -1391,6 +1395,77 @@ async function handleLoginFrame(request, response) {
   response.end(html);
 }
 
+async function handleLoginReturn(request, response) {
+  const raw = await readTextBody(request);
+  const form = new URLSearchParams(raw);
+  const email = String(form.get("email") || "").trim().toLowerCase();
+  const password = String(form.get("password") || "");
+  const state = await loadState();
+  const user = state.users.find((item) => String(item.email || "").toLowerCase() === email);
+  let payload;
+  if (!user || !verifyPassword(password, user.passwordHash)) {
+    payload = { ok: false, error: "invalid_credentials", message: "Identifiants invalides." };
+  } else if (user.approvalStatus === "rejected") {
+    payload = { ok: false, error: "rejected", message: "Votre demande d'accès a été refusée." };
+  } else {
+    payload = { ok: true, accessToken: signToken(user), user: sanitizeUser(user) };
+  }
+  const clientState = sanitizeSharedState(state);
+  const html = `<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Connexion ADSL-2EF</title>
+</head>
+<body>
+  <p>Connexion en cours...</p>
+  <script>
+    (() => {
+      const storageKey = "adsl2ef-lms-v1";
+      const payload = ${safeInlineJson(payload)};
+      if (!payload.ok) {
+        alert(payload.message || "Identifiants invalides.");
+        location.replace("/");
+        return;
+      }
+      const appState = ${safeInlineJson(clientState)};
+      const user = payload.user;
+      const existingUsers = Array.isArray(appState.users) ? appState.users : [];
+      const index = existingUsers.findIndex((item) => item.id === user.id || String(item.email || "").toLowerCase() === String(user.email || "").toLowerCase());
+      if (index >= 0) existingUsers[index] = { ...existingUsers[index], ...user };
+      else existingUsers.push(user);
+      appState.users = existingUsers;
+      appState.currentUserId = user.id;
+      appState.session = {
+        accessToken: payload.accessToken || "",
+        authProvider: "api",
+        lastAuthAt: new Date().toISOString()
+      };
+      appState.ui = {
+        ...(appState.ui || {}),
+        screen: "dashboard",
+        activeCourseId: null,
+        activeActivityId: null,
+        activeGameSessionId: null,
+        activeGameQuizId: null,
+        currentModuleId: null,
+        currentLessonId: null
+      };
+      localStorage.setItem(storageKey, JSON.stringify(appState));
+      location.replace("/?login=ok&v=20260608-login-return");
+    })();
+  </script>
+</body>
+</html>`;
+  response.writeHead(200, {
+    "Content-Type": "text/html; charset=utf-8",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer"
+  });
+  response.end(html);
+}
+
 async function handleRegister(request, response) {
   const body = await readBody(request);
   const email = String(body.email || "").trim().toLowerCase();
@@ -2211,6 +2286,7 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "POST" && pathname === "/admin/repair-encoding") return await handleRepairEncoding(request, response);
     if (request.method === "POST" && pathname === "/auth/login") return await handleLogin(request, response);
     if (request.method === "POST" && pathname === "/auth/login-frame") return await handleLoginFrame(request, response);
+    if (request.method === "POST" && pathname === "/auth/login-return") return await handleLoginReturn(request, response);
     if (request.method === "POST" && pathname === "/auth/register") return await handleRegister(request, response);
     if (request.method === "POST" && pathname === "/auth/approve") return await handleApproveUser(request, response);
     if (request.method === "POST" && pathname === "/auth/admin/create") return await handleAdminCreateUser(request, response);

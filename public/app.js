@@ -7902,6 +7902,12 @@ async function handleLogin(event) {
 async function submitLoginForm() {
   const form = document.getElementById("login-form");
   if (!form) return;
+  if (shouldPreferFrameLogin()) {
+    form.method = "POST";
+    form.action = buildApiFetchUrl("/auth/login-return");
+    form.submit();
+    return;
+  }
   await processLoginFormData(new FormData(form));
 }
 
