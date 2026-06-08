@@ -441,6 +441,24 @@ function sanitizeSharedState(state) {
   };
 }
 
+function preserveUserPasswordHashes(nextState, previousState) {
+  const previousUsers = ensureArray(previousState?.users);
+  nextState.users = ensureArray(nextState.users).map((user) => {
+    const existing = previousUsers.find((item) =>
+      item.id === user.id ||
+      (item.email && user.email && String(item.email).toLowerCase() === String(user.email).toLowerCase())
+    );
+    const existingHash = String(existing?.passwordHash || "");
+    const nextHash = String(user.passwordHash || "");
+    return {
+      ...user,
+      password: "",
+      passwordHash: nextHash || existingHash
+    };
+  });
+  return nextState;
+}
+
 function normalizePublicRegistrationRole(role) {
   const value = String(role || "").trim().toLowerCase();
   return value === "teacher" ? "teacher" : "student";
@@ -1184,9 +1202,13 @@ async function handlePutState(request, response) {
   if (!requireBearer(request, response)) return;
   const body = await readBody(request);
   const incoming = body.payload && typeof body.payload === "object" ? body.payload : body;
-  const state = sanitizeSharedState({ ...structuredClone(defaultState), ...incoming });
+  const previousState = await loadState();
+  const state = preserveUserPasswordHashes(
+    sanitizeSharedState({ ...structuredClone(defaultState), ...incoming }),
+    previousState
+  );
   await saveState(state);
-  json(response, 200, { payload: state });
+  json(response, 200, { payload: sanitizeSharedState(state) });
 }
 
 async function handleLogin(request, response) {
