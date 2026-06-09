@@ -3,7 +3,7 @@
  * VERSION : 2.0.0
  */
 
-const CACHE_NAME = "adsl2ef-v27-lesson-sections";
+const CACHE_NAME = "adsl2ef-v28-moodle-course-format";
 const OFFLINE_URL = "/offline.html";
 
 const PRECACHE_ASSETS = [

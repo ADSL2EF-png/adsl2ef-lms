@@ -4851,6 +4851,102 @@ function renderReviensEnJeuPage(user) {
   return user.role === "student" ? renderGameStudentPage(user) : renderGameTeacherPage(user);
 }
 
+function renderCourseModuleItem(course, module, item, user) {
+  const release = normalizeCourseReleaseState(course.release);
+  const isStudent = user.role === "student";
+  if (item.kind === "lesson") {
+    const locked = isLessonLocked(course, user, module.id, item.id);
+    const completed = isStudent && isLessonCompleted(user.id, course.id, module.id, item.id);
+    return `
+      <button class="moodle-activity ${completed ? "completed" : ""}" onclick="selectLesson('${course.id}','${module.id}','${item.id}')" ${locked ? "disabled" : ""}>
+        <span class="moodle-activity-icon">L</span>
+        <span class="moodle-activity-main">
+          <strong>${escapeHtml(item.title)}</strong>
+          <small>${escapeHtml(item.duration || "Leçon")} · ${locked ? "Fermée" : completed ? "Terminée" : isStudent ? "À faire" : release.lessons[item.id] === false ? "Fermée aux élèves" : "Accessible"}</small>
+        </span>
+      </button>
+    `;
+  }
+  if (item.kind === "activity") {
+    return `
+      <button class="moodle-activity" onclick="openActivity('${item.id}')">
+        <span class="moodle-activity-icon">${item.type === "quiz" ? "Q" : "D"}</span>
+        <span class="moodle-activity-main">
+          <strong>${escapeHtml(item.title)}</strong>
+          <small>${item.type === "quiz" ? "Quiz" : "Devoir"} · Échéance ${formatDate(item.dueDate)}</small>
+        </span>
+      </button>
+    `;
+  }
+  if (item.kind === "game") {
+    return `
+      <button class="moodle-activity" onclick="openGameQuizDetail('${item.id}')">
+        <span class="moodle-activity-icon">RJ</span>
+        <span class="moodle-activity-main">
+          <strong>${escapeHtml(item.title)}</strong>
+          <small>Reviens en Jeu · ${isGameQuizPaid(item) ? formatPrice(item.price || 0) : "Gratuit"}</small>
+        </span>
+      </button>
+    `;
+  }
+  return "";
+}
+
+function renderCourseSectionFormat(course, user, activeModule, activeLesson) {
+  const isStudent = user.role === "student";
+  const release = normalizeCourseReleaseState(course.release);
+  return `
+    <section class="panel moodle-course-format" id="course-sections" style="margin-top:18px">
+      <div class="toolbar" style="justify-content:space-between">
+        <div>
+          <p class="eyebrow">Structure du cours</p>
+          <h3>Parcours organisé par sections</h3>
+          <p class="section-subtitle">Chaque section regroupe les leçons, activités, devoirs, quiz et Reviens en Jeu liés au module.</p>
+        </div>
+        <div class="badge-row">
+          <span class="badge primary">${course.modules.length} section(s)</span>
+          <span class="badge warning">${getActivitiesForCourse(course.id).length} activité(s)</span>
+        </div>
+      </div>
+      <div class="moodle-section-list">
+        ${course.modules.map((module, index) => {
+          const locked = isModuleLocked(course, user, module.id);
+          const lessons = (module.lessons || []).map((lesson) => ({ ...lesson, kind: "lesson" }));
+          const activities = getModuleActivities(course.id, module.id).map((activity) => ({ ...activity, kind: "activity" }));
+          const games = getLinkedGameQuizzesForModule(course, module.id, user).map((quiz) => ({ ...quiz, kind: "game" }));
+          const metrics = isStudent ? getModuleCompletionMetrics(course, module.id, user.id) : null;
+          const isActive = activeModule?.id === module.id;
+          return `
+            <article class="moodle-section ${isActive ? "active" : ""}" id="course-section-${module.id}">
+              <div class="moodle-section-head">
+                <button class="moodle-section-title" onclick="selectModule('${course.id}','${module.id}')" ${locked ? "disabled" : ""}>
+                  <span>Section ${index + 1}</span>
+                  <strong>${escapeHtml(module.title)}</strong>
+                </button>
+                <div class="badge-row">
+                  ${isStudent && metrics ? `<span class="badge primary">${metrics.progress}%</span>` : ""}
+                  <span class="badge ${locked ? "danger" : "success"}">${locked ? "Fermée" : isStudent ? "Accessible" : release.modules[module.id] === false ? "Fermée aux élèves" : "Ouverte"}</span>
+                </div>
+              </div>
+              ${module.summary ? `<p class="meta">${escapeHtml(module.summary)}</p>` : ""}
+              <div class="moodle-activity-list">
+                ${lessons.concat(activities, games).map((item) => renderCourseModuleItem(course, module, item, user)).join("") || `<div class="empty-state">Aucun contenu dans cette section.</div>`}
+              </div>
+              ${canTeachCourse(user, course) ? `
+                <div class="toolbar moodle-section-actions">
+                  <button class="btn-ghost" onclick="openModuleEditor('${course.id}','${module.id}')">Modifier la section</button>
+                  <button class="btn-ghost" onclick="openLessonBuilder('${course.id}','${module.id}')">Ajouter une leçon</button>
+                  <button class="btn-ghost" onclick="openActivityBuilder('${course.id}')">Ajouter devoir/quiz</button>
+                </div>
+              ` : ""}
+            </article>
+          `;
+        }).join("") || `<div class="empty-state">Ajoutez un module pour créer la première section du cours.</div>`}
+      </div>
+    </section>
+  `;
+}
+
 function renderCourseMainMenu(course, user, activeModule, activeLesson, activities, completionMetrics, moduleMetrics) {
   const release = normalizeCourseReleaseState(course.release);
   const isStudent = user.role === "student";
@@ -4870,6 +4966,7 @@ function renderCourseMainMenu(course, user, activeModule, activeLesson, activiti
         </div>
       </div>
       <div class="course-mobile-chipbar">
+        <a href="#course-sections" class="chip">Sections</a>
         <a href="#course-lesson-panel" class="chip">Cours</a>
         <a href="#course-lessons" class="chip">Leçons</a>
         <a href="#course-live-classes" class="chip">Classes en direct</a>
@@ -5846,6 +5943,7 @@ function renderCourseWorkspace(user) {
             ` : ""}
           </div>
           ${renderCourseMainMenu(course, user, module, lesson, activities, completionMetrics, moduleMetrics)}
+          ${renderCourseSectionFormat(course, user, module, lesson)}
           ${lesson ? `
             <section class="panel" id="course-lesson-panel" style="margin-top:18px">
               <div class="toolbar" style="justify-content:space-between">
