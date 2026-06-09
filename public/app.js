@@ -13,6 +13,18 @@ const atlSkillLabels = {
   selfManagement: "Gestion de soi",
   collaboration: "Compétences sociales / Collaboration"
 };
+const lessonSectionDefinitions = [
+  { key: "objectives", label: "Objectifs de la leçon", placeholder: "Ce que l'apprenant doit savoir, comprendre ou réaliser à la fin." },
+  { key: "plan", label: "Plan de la leçon", placeholder: "Annoncez les grandes parties et la progression." },
+  { key: "courseContent", label: "Contenu du cours (texte, PDF, vidéo)", placeholder: "Texte du cours, consignes pour le PDF ou la vidéo, points essentiels." },
+  { key: "activity", label: "Activité de la leçon", placeholder: "Activité guidée, manipulation, étude de cas, recherche ou tâche courte." },
+  { key: "applicationExercises", label: "Exercices d'application", placeholder: "Exercices directement liés aux notions vues dans le cours." },
+  { key: "correction", label: "Correction (écrite et/ou vidéo)", placeholder: "Correction détaillée, méthode, lien vidéo ou indications." },
+  { key: "trainingExercises", label: "Exercices d'entraînement", placeholder: "Exercices supplémentaires pour consolider les acquis." },
+  { key: "trainingSolutions", label: "Solutions des exercices d'entraînement / Reviens en Jeu", placeholder: "Solutions, corrigés, ou lien vers un quiz Reviens en Jeu." },
+  { key: "homework", label: "Devoir", placeholder: "Travail à rendre, consignes, délai, lien ou quiz associé." },
+  { key: "summary", label: "Résumé de la leçon", placeholder: "Synthèse courte à retenir." }
+];
 const statusLabels = { draft: "Brouillon", published: "Publié", archived: "Archivé", submitted: "Soumis", reviewed: "Corrigé", pending: "En attente", graded: "Noté", pending_review: "En attente de validation" };
 // Les identifiants Supabase sont configurés dans le panneau d'administration
 // (Paramètres → Persistance → Supabase) et stockés dans localStorage.
@@ -127,6 +139,93 @@ function renderLessonPedagogySummary(lesson) {
       ${pedagogy.learningObjectives ? `<div class="module-card"><strong>Objectifs d'apprentissage</strong><div class="meta" style="margin-top:8px">${escapeHtml(pedagogy.learningObjectives)}</div></div>` : ""}
       ${pedagogy.targetedCompetencies ? `<div class="module-card"><strong>Compétences visées</strong><div class="meta" style="margin-top:8px">${escapeHtml(pedagogy.targetedCompetencies)}</div></div>` : ""}
       ${pedagogy.atlSkills.length || pedagogy.atlNotes ? `<div class="module-card"><strong>ATL - Approches de l'apprentissage</strong>${pedagogy.atlSkills.length ? `<div class="badge-row" style="margin-top:10px">${pedagogy.atlSkills.map((skill) => `<span class="badge primary">${escapeHtml(atlSkillLabels[skill])}</span>`).join("")}</div>` : ""}${pedagogy.atlNotes ? `<div class="meta" style="margin-top:10px">${escapeHtml(pedagogy.atlNotes)}</div>` : ""}</div>` : ""}
+    </div>
+  `;
+}
+
+function getLessonSections(lesson = {}) {
+  const raw = lesson.sections && typeof lesson.sections === "object" ? lesson.sections : {};
+  const legacyContent = String(lesson.content || "").trim();
+  return lessonSectionDefinitions.reduce((sections, definition) => {
+    const value = String(raw[definition.key] || "").trim();
+    sections[definition.key] = value || (definition.key === "courseContent" ? legacyContent : "");
+    return sections;
+  }, {});
+}
+
+function buildLessonSectionsFromForm(formData) {
+  return lessonSectionDefinitions.reduce((sections, definition) => {
+    const isIncluded = formData.get(`sectionEnabled:${definition.key}`) === "on";
+    const value = String(formData.get(`section:${definition.key}`) || "").trim();
+    if (isIncluded && value) sections[definition.key] = value;
+    return sections;
+  }, {});
+}
+
+function renderLessonSectionFields(lesson = {}) {
+  const sections = getLessonSections(lesson);
+  return `
+    <div class="field full" style="background:#f8f9fa;padding:12px;border-radius:8px">
+      <label style="font-weight:700;margin-bottom:8px;display:block">Structure pédagogique de la leçon</label>
+      <p class="tiny" style="margin-bottom:12px">Cochez les sections à afficher. Pour supprimer une section, décochez-la ou videz son contenu.</p>
+      <div class="simple-list">
+        ${lessonSectionDefinitions.map((definition, index) => {
+          const value = sections[definition.key] || "";
+          const checked = value || definition.key === "courseContent";
+          return `
+            <div class="module-card">
+              <label style="display:flex;gap:10px;align-items:center;font-weight:800">
+                <input type="checkbox" name="sectionEnabled:${definition.key}" ${checked ? "checked" : ""}>
+                ${index + 1}. ${escapeHtml(definition.label)}
+              </label>
+              <textarea name="section:${definition.key}" placeholder="${escapeHtml(definition.placeholder)}" style="margin-top:10px">${escapeHtml(value)}</textarea>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    </div>
+  `;
+}
+
+function renderLessonStructuredSections(lesson, course, module, user) {
+  const sections = getLessonSections(lesson);
+  const visibleSections = lessonSectionDefinitions.filter((definition) => sections[definition.key]);
+  if (!visibleSections.length) {
+    return `<div class="empty-state">Aucune section pédagogique n'est encore renseignée pour cette leçon.</div>`;
+  }
+  return `
+    <div class="course-mobile-chipbar" style="margin-top:18px">
+      ${visibleSections.map((definition) => `<a class="chip" href="#lesson-section-${definition.key}">${escapeHtml(definition.label.split(" ")[0])}</a>`).join("")}
+    </div>
+    <div class="simple-list" style="margin-top:18px">
+      ${visibleSections.map((definition, index) => `
+        <article class="module-card" id="lesson-section-${definition.key}">
+          <div class="toolbar" style="justify-content:space-between">
+            <strong>${index + 1}. ${escapeHtml(definition.label)}</strong>
+            <span class="badge primary">${escapeHtml(definition.key === "courseContent" ? "Cours" : "Étape")}</span>
+          </div>
+          <div class="meta" style="margin-top:10px;white-space:pre-wrap">${escapeHtml(sections[definition.key])}</div>
+          ${definition.key === "courseContent" && (lesson.resources || []).length ? `
+            <div class="lesson-embed-list">
+              ${(lesson.resources || []).map((resource) => `
+                <article class="lesson-embed-card">
+                  <div class="toolbar" style="justify-content:space-between;margin-bottom:12px">
+                    <div>
+                      <strong>${escapeHtml(resource.title)}</strong>
+                      <div class="tiny">${escapeHtml(resource.type)}</div>
+                    </div>
+                    <a class="btn-ghost" href="${escapeHtml(resource.url || "#")}" target="_blank" rel="noreferrer">Nouvel onglet</a>
+                  </div>
+                  ${renderResourceEmbed(resource, true)}
+                </article>
+              `).join("")}
+            </div>
+            <div class="resource-grid">
+              ${(lesson.resources || []).map((resource) => `<div class="resource-item"><div><strong>${escapeHtml(resource.title)}</strong><div class="tiny">${escapeHtml(resource.type)}</div></div>${renderResourceAction(course.id, module.id, lesson.id, resource)}</div>`).join("")}
+            </div>
+          ` : ""}
+        </article>
+      `).join("")}
     </div>
   `;
 }
@@ -5756,27 +5855,9 @@ function renderCourseWorkspace(user) {
                   ${user.role === "student" ? `<span class="badge ${lessonCompleted ? "success" : "warning"}">${lessonCompleted ? "Terminée" : "À faire"}</span>` : ""}
                 </div>
               </div>
-              <p class="section-subtitle">${escapeHtml(lesson.content)}</p>
+              <p class="section-subtitle">Progression recommandée : Cours → Activité → Exercices d'application → Correction → Exercices d'entraînement → Solutions → Devoir/Quiz → Résumé.</p>
               ${renderLessonPedagogySummary(lesson)}
-              ${(lesson.resources || []).length ? `
-                <div class="lesson-embed-list">
-                  ${(lesson.resources || []).map((resource) => `
-                    <article class="lesson-embed-card">
-                      <div class="toolbar" style="justify-content:space-between;margin-bottom:12px">
-                        <div>
-                          <strong>${escapeHtml(resource.title)}</strong>
-                          <div class="tiny">${escapeHtml(resource.type)}</div>
-                        </div>
-                        <a class="btn-ghost" href="${escapeHtml(resource.url || "#")}" target="_blank" rel="noreferrer">Nouvel onglet</a>
-                      </div>
-                      ${renderResourceEmbed(resource, true)}
-                    </article>
-                  `).join("")}
-                </div>
-              ` : ""}
-              <div class="resource-grid">
-                ${(lesson.resources || []).map((resource) => `<div class="resource-item"><div><strong>${escapeHtml(resource.title)}</strong><div class="tiny">${escapeHtml(resource.type)}</div></div>${renderResourceAction(course.id, module.id, lesson.id, resource)}</div>`).join("")}
-              </div>
+              ${renderLessonStructuredSections(lesson, course, module, user)}
               ${user.role === "student" ? `
                 <div class="toolbar" style="justify-content:space-between;margin-top:18px">
                   <div class="tiny">${lessonCompleted ? "Cette leçon est prise en compte dans votre progression." : "Validez cette leçon une fois consultée."}</div>
@@ -6903,7 +6984,7 @@ function openLessonBuilder(courseId, moduleId) {
         <option value="link">🔗 Lien externe</option>
       </select></div>
       <div class="field"><label for="lesson-duration">Durée estimée</label><input id="lesson-duration" name="duration" required placeholder="15 min"></div>
-      <div class="field full"><label for="lesson-content">Contenu / Description</label><textarea id="lesson-content" name="content" placeholder="Décrivez le contenu de cette leçon..." required></textarea></div>
+      ${renderLessonSectionFields()}
       <div class="field full"><label for="lesson-learning-objectives">Objectifs d'apprentissage</label><textarea id="lesson-learning-objectives" name="learningObjectives" placeholder="À la fin de la leçon, l'apprenant devra savoir, comprendre ou être capable de..."></textarea></div>
       <div class="field full"><label for="lesson-targeted-competencies">Compétences visées</label><textarea id="lesson-targeted-competencies" name="targetedCompetencies" placeholder="Décrivez les compétences spécifiques développées dans cette leçon."></textarea></div>
       <div class="field full">
@@ -6951,7 +7032,7 @@ function openLessonEditor(courseId, moduleId, lessonId) {
         <option value="link" ${lesson.type === "link" ? "selected" : ""}>🔗 Lien externe</option>
       </select></div>
       <div class="field"><label for="edit-lesson-duration">Durée</label><input id="edit-lesson-duration" name="duration" value="${escapeHtml(lesson.duration || "")}" required></div>
-      <div class="field full"><label for="edit-lesson-content">Contenu / Description</label><textarea id="edit-lesson-content" name="content" required>${escapeHtml(lesson.content || "")}</textarea></div>
+      ${renderLessonSectionFields(lesson)}
       <div class="field full"><label for="edit-lesson-learning-objectives">Objectifs d'apprentissage</label><textarea id="edit-lesson-learning-objectives" name="learningObjectives" placeholder="À la fin de la leçon, l'apprenant devra savoir, comprendre ou être capable de...">${escapeHtml(pedagogy.learningObjectives)}</textarea></div>
       <div class="field full"><label for="edit-lesson-targeted-competencies">Compétences visées</label><textarea id="edit-lesson-targeted-competencies" name="targetedCompetencies" placeholder="Décrivez les compétences spécifiques développées dans cette leçon.">${escapeHtml(pedagogy.targetedCompetencies)}</textarea></div>
       <div class="field full">
@@ -8698,12 +8779,14 @@ async function handleLessonCreate(event) {
   const resourceUrl = String(formData.get("resourceUrl")).trim();
   const resourceType = String(formData.get("resourceType") || "link").trim();
   const pedagogy = buildLessonPedagogyFromForm(formData);
+  const sections = buildLessonSectionsFromForm(formData);
   const lesson = {
     id: crypto.randomUUID(),
     title: String(formData.get("title")).trim(),
     type: String(formData.get("type")).trim(),
     duration: String(formData.get("duration")).trim(),
-    content: String(formData.get("content")).trim(),
+    content: sections.courseContent || "",
+    sections,
     ...pedagogy,
     resources: resourceTitle && resourceUrl ? [{ id: crypto.randomUUID(), title: resourceTitle, type: resourceType, url: resourceUrl }] : []
   };
@@ -8753,7 +8836,8 @@ async function handleLessonEdit(event) {
   lesson.title = String(formData.get("title")).trim();
   lesson.type = String(formData.get("type")).trim();
   lesson.duration = String(formData.get("duration")).trim();
-  lesson.content = String(formData.get("content")).trim();
+  lesson.sections = buildLessonSectionsFromForm(formData);
+  lesson.content = lesson.sections.courseContent || "";
   Object.assign(lesson, buildLessonPedagogyFromForm(formData));
   lesson.resources = resourceTitle && resourceUrl ? [{ id: lesson.resources?.[0]?.id || crypto.randomUUID(), title: resourceTitle, type: resourceType, url: resourceUrl }] : [];
   if (shouldUseSupabasePersistence()) {
