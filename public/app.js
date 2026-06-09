@@ -7977,6 +7977,12 @@ async function processLoginFormData(formData) {
 
 async function handleRegister(event) {
   event.preventDefault();
+  if (shouldPreferFrameLogin()) {
+    event.currentTarget.method = "POST";
+    event.currentTarget.action = "/auth/register-return";
+    HTMLFormElement.prototype.submit.call(event.currentTarget);
+    return;
+  }
   const formData = new FormData(event.currentTarget);
   const email = String(formData.get("email")).trim().toLowerCase();
   const name = String(formData.get("name")).trim();

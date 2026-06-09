@@ -1605,6 +1605,94 @@ async function handleRegister(request, response) {
   }
 }
 
+async function handleRegisterReturn(request, response) {
+  const raw = await readTextBody(request);
+  const form = new URLSearchParams(raw);
+  let result = {
+    status: 500,
+    payload: { ok: false, message: "Inscription impossible pour le moment." }
+  };
+  try {
+    const registerResponse = await fetch(`http://${HOST === "0.0.0.0" ? "127.0.0.1" : HOST}:${PORT}/auth/register`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name: form.get("name") || "",
+        email: form.get("email") || "",
+        phone: form.get("phone") || "",
+        password: form.get("password") || "",
+        role: form.get("role") || "student"
+      })
+    });
+    result = {
+      status: registerResponse.status,
+      payload: await registerResponse.json()
+    };
+  } catch (error) {
+    console.error("Register return error:", error);
+  }
+
+  const state = await loadState();
+  const clientState = sanitizeSharedState(state);
+  const payload = {
+    ok: result.status >= 200 && result.status < 300,
+    ...(result.payload || {})
+  };
+  const html = `<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Inscription ADSL-2EF</title>
+</head>
+<body>
+  <p>Inscription en cours...</p>
+  <script>
+    (() => {
+      const storageKey = "adsl2ef-lms-v1";
+      const payload = ${safeInlineJson(payload)};
+      if (!payload.ok || !payload.user) {
+        alert(payload.message || "Inscription impossible pour le moment.");
+        location.replace("/");
+        return;
+      }
+      const appState = ${safeInlineJson(clientState)};
+      const user = payload.user;
+      const existingUsers = Array.isArray(appState.users) ? appState.users : [];
+      const index = existingUsers.findIndex((item) => item.id === user.id || String(item.email || "").toLowerCase() === String(user.email || "").toLowerCase());
+      if (index >= 0) existingUsers[index] = { ...existingUsers[index], ...user };
+      else existingUsers.push(user);
+      appState.users = existingUsers;
+      appState.currentUserId = user.id;
+      appState.session = {
+        accessToken: payload.accessToken || "",
+        authProvider: "api",
+        lastAuthAt: new Date().toISOString()
+      };
+      appState.ui = {
+        ...(appState.ui || {}),
+        screen: "dashboard",
+        activeCourseId: null,
+        activeActivityId: null,
+        activeGameSessionId: null,
+        activeGameQuizId: null,
+        currentModuleId: null,
+        currentLessonId: null
+      };
+      localStorage.setItem(storageKey, JSON.stringify(appState));
+      location.replace("/?register=ok&v=20260609-register-return");
+    })();
+  </script>
+</body>
+</html>`;
+  response.writeHead(200, {
+    "Content-Type": "text/html; charset=utf-8",
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "no-referrer"
+  });
+  response.end(html);
+}
+
 async function handleApproveUser(request, response) {
   if (!requireBearer(request, response)) return;
   const body = await readBody(request);
@@ -2288,6 +2376,7 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "POST" && pathname === "/auth/login-frame") return await handleLoginFrame(request, response);
     if (request.method === "POST" && pathname === "/auth/login-return") return await handleLoginReturn(request, response);
     if (request.method === "POST" && pathname === "/auth/register") return await handleRegister(request, response);
+    if (request.method === "POST" && pathname === "/auth/register-return") return await handleRegisterReturn(request, response);
     if (request.method === "POST" && pathname === "/auth/approve") return await handleApproveUser(request, response);
     if (request.method === "POST" && pathname === "/auth/admin/create") return await handleAdminCreateUser(request, response);
     if (request.method === "POST" && pathname === "/payments/init") return await handlePaymentInit(request, response);
