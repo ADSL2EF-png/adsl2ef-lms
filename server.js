@@ -8,6 +8,8 @@ const crypto = require("crypto");
 
 const PORT = Number(process.env.PORT || 3000);
 const HOST = process.env.HOST || "0.0.0.0";
+const STABLE_APP_ORIGIN = "https://adsl2ef-lms-production.up.railway.app";
+const REDIRECTED_CUSTOM_HOSTS = new Set(["lms.adsl2ef.org", "www.lms.adsl2ef.org"]);
 const API_TOKEN = process.env.ADSL2EF_API_TOKEN || "";
 const PAYMENT_WEBHOOK_SECRET = process.env.ADSL2EF_PAYMENT_WEBHOOK_SECRET || "";
 const ALLOWED_ORIGIN = process.env.ADSL2EF_ALLOWED_ORIGIN || "";
@@ -375,6 +377,22 @@ function getRequestPath(request) {
 
 function getRequestUrl(request) {
   return new URL(request.url, `http://${request.headers.host || "localhost"}`);
+}
+
+function shouldRedirectCustomHost(request) {
+  const host = String(request.headers.host || "").split(":")[0].toLowerCase();
+  return REDIRECTED_CUSTOM_HOSTS.has(host);
+}
+
+function redirectCustomHostToStableApp(request, response) {
+  const target = new URL(request.url || "/", STABLE_APP_ORIGIN);
+  response.writeHead(request.method === "GET" || request.method === "HEAD" ? 302 : 307, {
+    Location: target.toString(),
+    "Cache-Control": "no-store",
+    "X-Content-Type-Options": "nosniff",
+    "X-Frame-Options": "DENY"
+  });
+  response.end();
 }
 
 function randomId(prefix) {
@@ -2449,6 +2467,10 @@ const server = http.createServer(async (request, response) => {
       });
       response.end();
       return;
+    }
+
+    if (shouldRedirectCustomHost(request)) {
+      return redirectCustomHostToStableApp(request, response);
     }
 
     const pathname = getRequestPath(request);
