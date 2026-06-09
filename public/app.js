@@ -7196,16 +7196,81 @@ async function purchaseGameQuiz(quizId) {
   `);
 }
 
-function renderGameQuizScopeFields(quiz = {}) {
+function getGameScopeCourses() {
   const actor = getCurrentUser();
-  const courses = getVisibleCoursesForUser(actor).filter((course) => actor?.role !== "student" && canTeachCourse(actor, course));
-  const selectedCourse = getCourseById(quiz.courseId) || courses[0];
-  const modules = selectedCourse?.modules || [];
-  const lessons = (selectedCourse?.modules || []).flatMap((module) => (module.lessons || []).map((lesson) => ({ ...lesson, moduleTitle: module.title })));
+  return getVisibleCoursesForUser(actor).filter((course) => actor?.role !== "student" && canTeachCourse(actor, course));
+}
+
+function renderGameModuleOptions(courseId, selectedModuleId = "") {
+  const course = getCourseById(courseId);
+  return [
+    `<option value="">Aucun module</option>`,
+    ...(course?.modules || []).map((module) => `<option value="${module.id}" ${selectedModuleId === module.id ? "selected" : ""}>${escapeHtml(module.title)}</option>`)
+  ].join("");
+}
+
+function renderGameLessonOptions(courseId, selectedModuleId = "", selectedLessonId = "") {
+  const course = getCourseById(courseId);
+  const modules = selectedModuleId
+    ? (course?.modules || []).filter((module) => module.id === selectedModuleId)
+    : (course?.modules || []);
+  const lessons = modules.flatMap((module) => (module.lessons || []).map((lesson) => ({ ...lesson, moduleTitle: module.title })));
+  return [
+    `<option value="">Aucune leçon</option>`,
+    ...lessons.map((lesson) => `<option value="${lesson.id}" ${selectedLessonId === lesson.id ? "selected" : ""}>${escapeHtml(lesson.moduleTitle)} · ${escapeHtml(lesson.title)}</option>`)
+  ].join("");
+}
+
+function updateGameQuizScopeSelectors(options = {}) {
+  const courseSelect = document.getElementById("game-course");
+  const moduleSelect = document.getElementById("game-module");
+  const lessonSelect = document.getElementById("game-lesson");
+  if (!courseSelect || !moduleSelect || !lessonSelect) return;
+
+  const courseId = courseSelect.value;
+  const selectedModuleId = options.resetModule ? "" : moduleSelect.value;
+  const selectedLessonId = options.resetLesson ? "" : lessonSelect.value;
+  moduleSelect.innerHTML = renderGameModuleOptions(courseId, selectedModuleId);
+  lessonSelect.innerHTML = renderGameLessonOptions(courseId, moduleSelect.value, selectedLessonId);
+  moduleSelect.disabled = !courseId;
+  lessonSelect.disabled = !courseId;
+}
+
+function bindGameQuizScopeSelectors() {
+  const courseSelect = document.getElementById("game-course");
+  const moduleSelect = document.getElementById("game-module");
+  if (!courseSelect || !moduleSelect) return;
+  courseSelect.addEventListener("change", () => updateGameQuizScopeSelectors({ resetModule: true, resetLesson: true }));
+  moduleSelect.addEventListener("change", () => updateGameQuizScopeSelectors({ resetLesson: true }));
+  updateGameQuizScopeSelectors();
+}
+
+function normalizeGameQuizScope(formData) {
+  const courseId = String(formData.get("courseId") || "").trim();
+  const course = getCourseById(courseId);
+  if (!course) return { courseId: "", moduleId: "", lessonId: "" };
+
+  let moduleId = String(formData.get("moduleId") || "").trim();
+  let lessonId = String(formData.get("lessonId") || "").trim();
+  const module = (course.modules || []).find((item) => item.id === moduleId);
+  const lessonModule = (course.modules || []).find((item) => (item.lessons || []).some((lesson) => lesson.id === lessonId));
+
+  if (!module && moduleId) moduleId = "";
+  if (!lessonModule) lessonId = "";
+  if (lessonModule && !moduleId) moduleId = lessonModule.id;
+  if (lessonModule && moduleId !== lessonModule.id) lessonId = "";
+
+  return { courseId, moduleId, lessonId };
+}
+
+function renderGameQuizScopeFields(quiz = {}) {
+  const courses = getGameScopeCourses();
+  const selectedCourse = quiz.courseId ? getCourseById(quiz.courseId) : null;
+  const selectedModuleId = getGameQuizModuleId(quiz);
   return `
     <div class="field"><label for="game-course">Cours lié</label><select id="game-course" name="courseId"><option value="">Quiz indépendant</option>${courses.map((course) => `<option value="${course.id}" ${quiz.courseId === course.id ? "selected" : ""}>${escapeHtml(course.title)}</option>`).join("")}</select></div>
-    <div class="field"><label for="game-module">Module lié</label><select id="game-module" name="moduleId"><option value="">Aucun module</option>${modules.map((module) => `<option value="${module.id}" ${getGameQuizModuleId(quiz) === module.id ? "selected" : ""}>${escapeHtml(module.title)}</option>`).join("")}</select></div>
-    <div class="field"><label for="game-lesson">Leçon liée</label><select id="game-lesson" name="lessonId"><option value="">Aucune leçon</option>${lessons.map((lesson) => `<option value="${lesson.id}" ${quiz.lessonId === lesson.id ? "selected" : ""}>${escapeHtml(lesson.moduleTitle)} · ${escapeHtml(lesson.title)}</option>`).join("")}</select></div>
+    <div class="field"><label for="game-module">Module lié</label><select id="game-module" name="moduleId" ${selectedCourse ? "" : "disabled"}>${renderGameModuleOptions(selectedCourse?.id || "", selectedModuleId)}</select></div>
+    <div class="field"><label for="game-lesson">Leçon liée</label><select id="game-lesson" name="lessonId" ${selectedCourse ? "" : "disabled"}>${renderGameLessonOptions(selectedCourse?.id || "", selectedModuleId, quiz.lessonId || "")}</select></div>
     <div class="field"><label for="game-subject">Matière</label><input id="game-subject" name="subject" value="${escapeHtml(quiz.subject || "")}" placeholder="Mathématiques, français..."></div>
     <div class="field"><label for="game-class">Classe</label><input id="game-class" name="className" value="${escapeHtml(quiz.className || "")}" placeholder="4ème, Terminale, CAT 1..."></div>
     <div class="field"><label for="game-access">Accès</label><select id="game-access" name="accessType"><option value="free" ${String(quiz.accessType || "free") === "free" ? "selected" : ""}>Gratuit</option><option value="paid" ${quiz.accessType === "paid" ? "selected" : ""}>Payant</option></select></div>
@@ -7269,15 +7334,16 @@ function openGameQuestionBuilder(quizId) {
 async function handleGameQuizCreate(event) {
   event.preventDefault();
   const formData = new FormData(event.currentTarget);
+  const scope = normalizeGameQuizScope(formData);
   const quiz = {
     id: crypto.randomUUID(),
     title: String(formData.get("title")).trim(),
     description: String(formData.get("description") || "").trim(),
     mode: String(formData.get("mode") || "competition"),
     status: String(formData.get("status") || "published"),
-    courseId: String(formData.get("courseId") || "").trim(),
-    moduleId: String(formData.get("moduleId") || "").trim(),
-    lessonId: String(formData.get("lessonId") || "").trim(),
+    courseId: scope.courseId,
+    moduleId: scope.moduleId,
+    lessonId: scope.lessonId,
     subject: String(formData.get("subject") || "").trim(),
     className: String(formData.get("className") || "").trim(),
     accessType: String(formData.get("accessType") || "free").trim(),
@@ -7302,13 +7368,14 @@ async function handleGameQuizEdit(event) {
   const quiz = getGameQuizById(event.currentTarget.dataset.quizId);
   if (!quiz || !canManageGameQuiz(getCurrentUser(), quiz)) return;
   const formData = new FormData(event.currentTarget);
+  const scope = normalizeGameQuizScope(formData);
   quiz.title = String(formData.get("title")).trim();
   quiz.description = String(formData.get("description") || "").trim();
   quiz.mode = String(formData.get("mode") || "competition");
   quiz.status = String(formData.get("status") || "published");
-  quiz.courseId = String(formData.get("courseId") || "").trim();
-  quiz.moduleId = String(formData.get("moduleId") || "").trim();
-  quiz.lessonId = String(formData.get("lessonId") || "").trim();
+  quiz.courseId = scope.courseId;
+  quiz.moduleId = scope.moduleId;
+  quiz.lessonId = scope.lessonId;
   quiz.subject = String(formData.get("subject") || "").trim();
   quiz.className = String(formData.get("className") || "").trim();
   quiz.accessType = String(formData.get("accessType") || "free").trim();
@@ -7812,6 +7879,7 @@ function bindForms() {
   document.getElementById("profile-edit-form")?.addEventListener("submit", handleProfileEdit);
   document.getElementById("game-quiz-form")?.addEventListener("submit", handleGameQuizCreate);
   document.getElementById("game-quiz-edit-form")?.addEventListener("submit", handleGameQuizEdit);
+  bindGameQuizScopeSelectors();
   document.getElementById("game-question-form")?.addEventListener("submit", handleGameQuestionCreate);
   document.getElementById("game-join-form")?.addEventListener("submit", handleGameJoin);
   document.getElementById("game-answer-form")?.addEventListener("submit", handleGameAnswerSubmit);

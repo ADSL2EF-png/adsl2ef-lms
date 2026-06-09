@@ -3,7 +3,7 @@
  * VERSION : 2.0.0
  */
 
-const CACHE_NAME = "adsl2ef-v25-course-content-sync";
+const CACHE_NAME = "adsl2ef-v26-game-scope-selectors";
 const OFFLINE_URL = "/offline.html";
 
 const PRECACHE_ASSETS = [
