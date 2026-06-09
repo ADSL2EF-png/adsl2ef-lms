@@ -979,14 +979,22 @@ function migrateState(parsed) {
         : ["Videos HD", "PDF telechargeables", "Quiz et devoirs", "Suivi de progression"],
       release: normalizeCourseReleaseState(course.release),
       ...course,
-      modules: (course.modules || []).map((module) => ({
-        ...module,
-        lessons: (module.lessons || []).map((lesson) => ({
+      modules: (course.modules || []).map((module) => {
+        const normalizedModule = {
+          ...module,
+          sections: Array.isArray(module.sections) && module.sections.length ? module.sections : [defaultModuleSection(module)],
+          lessons: (module.lessons || []).map((lesson) => ({
           ...lesson,
           ...getLessonPedagogy(lesson),
+          sectionId: lesson.sectionId || lesson.section_id || "",
           resources: lesson.resources || []
-        }))
-      })),
+          }))
+        };
+        normalizeModuleSections(normalizedModule);
+        const fallbackSectionId = getModuleDefaultSectionId(normalizedModule);
+        normalizedModule.lessons = normalizedModule.lessons.map((lesson) => ({ ...lesson, sectionId: lesson.sectionId || fallbackSectionId }));
+        return normalizedModule;
+      }),
       liveClasses: normalizeLiveClasses(course),
       catalogType // priorité au catalogType final calculé
     };
@@ -995,6 +1003,14 @@ function migrateState(parsed) {
   next.messages = parsed.messages || [];
   next.forumThreads = parsed.forumThreads || [];
   next.attendanceSessions = parsed.attendanceSessions || [];
+  next.activities = (parsed.activities || []).map((activity) => {
+    const course = next.courses.find((item) => item.id === activity.courseId);
+    const module = course?.modules.find((item) => item.id === activity.moduleId);
+    return {
+      ...activity,
+      sectionId: activity.sectionId || activity.section_id || (module ? getModuleDefaultSectionId(module) : "")
+    };
+  });
   next.questionBank = parsed.questionBank || [];
   next.gameQuizzes = parsed.gameQuizzes || [];
   next.gameSessions = parsed.gameSessions || [];
@@ -2105,11 +2121,13 @@ async function loadStateFromSupabase() {
     const courseModules = modules
       .filter((module) => module.course_id === course.id)
       .sort((a, b) => (a.position || 0) - (b.position || 0))
-      .map((module) => ({
+      .map((module) => {
+        const normalizedModule = {
         id: module.id,
         title: module.title,
         summary: module.summary || "",
         order: module.position || 1,
+        sections: [defaultModuleSection({ id: module.id })],
         lessons: lessons
           .filter((lesson) => lesson.module_id === module.id)
           .sort((a, b) => (a.position || 0) - (b.position || 0))
@@ -2123,6 +2141,7 @@ async function loadStateFromSupabase() {
             targetedCompetencies: lesson.targeted_competencies || "",
             atlSkills: normalizeAtlSkills(lesson.atl_skills || []),
             atlNotes: lesson.atl_notes || "",
+            sectionId: "",
             resources: resources
               .filter((resource) => resource.lesson_id === lesson.id)
               .map((resource) => ({
@@ -2132,7 +2151,12 @@ async function loadStateFromSupabase() {
                 url: resource.url || "#"
               }))
           }))
-      }));
+        };
+        normalizeModuleSections(normalizedModule);
+        const fallbackSectionId = getModuleDefaultSectionId(normalizedModule);
+        normalizedModule.lessons = normalizedModule.lessons.map((lesson) => ({ ...lesson, sectionId: fallbackSectionId }));
+        return normalizedModule;
+      });
     return {
       id: course.id,
       title: course.title,
@@ -2161,6 +2185,7 @@ async function loadStateFromSupabase() {
     courseId: activity.course_id,
     moduleId: activity.module_id || "",
     lessonId: activity.lesson_id || "",
+    sectionId: activity.section_id || "",
     type: activity.activity_type,
     title: activity.title,
     description: activity.description || "",
@@ -2654,6 +2679,77 @@ function getCourseCompletionMetrics(course, userId) {
 }
 function getModuleActivities(courseId, moduleId) {
   return getActivitiesForCourse(courseId).filter((activity) => activity.moduleId === moduleId);
+}
+function defaultModuleSection(module) {
+  return {
+    id: module.defaultSectionId || `section-${module.id}`,
+    title: "Contenus du module",
+    summary: "Leçons, activités et ressources principales du module.",
+    order: 1
+  };
+}
+function normalizeModuleSections(module = {}) {
+  const source = Array.isArray(module.sections) && module.sections.length ? module.sections : [defaultModuleSection(module)];
+  const seen = new Set();
+  const sections = source
+    .map((section, index) => ({
+      id: section.id || crypto.randomUUID(),
+      title: String(section.title || `Section ${index + 1}`).trim(),
+      summary: String(section.summary || "").trim(),
+      order: Number(section.order || index + 1)
+    }))
+    .filter((section) => {
+      if (seen.has(section.id)) return false;
+      seen.add(section.id);
+      return true;
+    })
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
+  module.sections = sections.map((section, index) => ({ ...section, order: index + 1 }));
+  return module.sections;
+}
+function getModuleDefaultSectionId(module) {
+  return normalizeModuleSections(module)[0]?.id || "";
+}
+function getSectionActivities(courseId, moduleId, sectionId) {
+  return getModuleActivities(courseId, moduleId)
+    .filter((activity) => (activity.sectionId || getModuleDefaultSectionId(getCourseById(courseId)?.modules.find((module) => module.id === moduleId) || {})) === sectionId)
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
+}
+function getSectionLessons(module, sectionId) {
+  const defaultSectionId = getModuleDefaultSectionId(module);
+  return (module.lessons || [])
+    .filter((lesson) => (lesson.sectionId || defaultSectionId) === sectionId)
+    .sort((a, b) => (a.order || 0) - (b.order || 0));
+}
+function getModuleSectionById(module, sectionId) {
+  return normalizeModuleSections(module).find((section) => section.id === sectionId) || normalizeModuleSections(module)[0];
+}
+function parseModuleSectionTarget(value) {
+  const [moduleId, sectionId] = String(value || "").split("::");
+  return { moduleId: moduleId || "", sectionId: sectionId || "" };
+}
+function renderModuleSectionOptions(course, selectedModuleId = "", selectedSectionId = "") {
+  return (course.modules || []).map((module) => {
+    const sections = normalizeModuleSections(module);
+    return `<optgroup label="${escapeHtml(module.title)}">${sections.map((section) => {
+      const value = `${module.id}::${section.id}`;
+      const selected = module.id === selectedModuleId && section.id === selectedSectionId;
+      return `<option value="${value}" ${selected ? "selected" : ""}>${escapeHtml(section.title)}</option>`;
+    }).join("")}</optgroup>`;
+  }).join("");
+}
+async function persistCourseStructure(course, logLabel = "") {
+  if (!course) return;
+  course.modules = (course.modules || []).map((module, moduleIndex) => {
+    normalizeModuleSections(module);
+    module.order = moduleIndex + 1;
+    module.lessons = (module.lessons || []).map((lesson, lessonIndex) => ({ ...lesson, order: lesson.order || lessonIndex + 1 }));
+    return module;
+  });
+  if (logLabel) addLog(getCurrentUser()?.id || "", logLabel);
+  const remote = await publishPlatformEvent("course.updated", { course });
+  mergeRemoteEntity(course, extractRemoteEntity(remote, "course"));
+  saveState();
 }
 function getCertificateRecord(courseId, userId) {
   return state.certificateRecords.find((record) => record.courseId === courseId && record.userId === userId) || null;
@@ -4854,11 +4950,12 @@ function renderReviensEnJeuPage(user) {
 function renderCourseModuleItem(course, module, item, user) {
   const release = normalizeCourseReleaseState(course.release);
   const isStudent = user.role === "student";
+  const dragAttrs = canTeachCourse(user, course) ? ` draggable="true" ondragstart="startCourseItemDrag(event,'${item.kind}','${item.id}')" ondragover="allowCourseDrop(event)" ondrop="dropCourseItem(event,'${course.id}','${module.id}','${item.sectionId || ""}','${item.kind}','${item.id}')"` : "";
   if (item.kind === "lesson") {
     const locked = isLessonLocked(course, user, module.id, item.id);
     const completed = isStudent && isLessonCompleted(user.id, course.id, module.id, item.id);
     return `
-      <button class="moodle-activity ${completed ? "completed" : ""}" onclick="selectLesson('${course.id}','${module.id}','${item.id}')" ${locked ? "disabled" : ""}>
+      <button class="moodle-activity ${completed ? "completed" : ""}" ${dragAttrs} onclick="selectLesson('${course.id}','${module.id}','${item.id}')" ${locked ? "disabled" : ""}>
         <span class="moodle-activity-icon">L</span>
         <span class="moodle-activity-main">
           <strong>${escapeHtml(item.title)}</strong>
@@ -4869,7 +4966,7 @@ function renderCourseModuleItem(course, module, item, user) {
   }
   if (item.kind === "activity") {
     return `
-      <button class="moodle-activity" onclick="openActivity('${item.id}')">
+      <button class="moodle-activity" ${dragAttrs} onclick="openActivity('${item.id}')">
         <span class="moodle-activity-icon">${item.type === "quiz" ? "Q" : "D"}</span>
         <span class="moodle-activity-main">
           <strong>${escapeHtml(item.title)}</strong>
@@ -4895,32 +4992,31 @@ function renderCourseModuleItem(course, module, item, user) {
 function renderCourseSectionFormat(course, user, activeModule, activeLesson) {
   const isStudent = user.role === "student";
   const release = normalizeCourseReleaseState(course.release);
+  const canManage = canTeachCourse(user, course);
   return `
     <section class="panel moodle-course-format" id="course-sections" style="margin-top:18px">
       <div class="toolbar" style="justify-content:space-between">
         <div>
           <p class="eyebrow">Structure du cours</p>
-          <h3>Parcours organisé par sections</h3>
-          <p class="section-subtitle">Chaque section regroupe les leçons, activités, devoirs, quiz et Reviens en Jeu liés au module.</p>
+          <h3>Modules, sections et contenus</h3>
+          <p class="section-subtitle">Organisation type Moodle : chaque module contient des sections, et chaque section regroupe ses cours, activités, exercices, corrections, devoirs, quiz et ressources.</p>
         </div>
         <div class="badge-row">
-          <span class="badge primary">${course.modules.length} section(s)</span>
+          <span class="badge primary">${course.modules.length} module(s)</span>
           <span class="badge warning">${getActivitiesForCourse(course.id).length} activité(s)</span>
         </div>
       </div>
       <div class="moodle-section-list">
         ${course.modules.map((module, index) => {
+          const sections = normalizeModuleSections(module);
           const locked = isModuleLocked(course, user, module.id);
-          const lessons = (module.lessons || []).map((lesson) => ({ ...lesson, kind: "lesson" }));
-          const activities = getModuleActivities(course.id, module.id).map((activity) => ({ ...activity, kind: "activity" }));
-          const games = getLinkedGameQuizzesForModule(course, module.id, user).map((quiz) => ({ ...quiz, kind: "game" }));
           const metrics = isStudent ? getModuleCompletionMetrics(course, module.id, user.id) : null;
           const isActive = activeModule?.id === module.id;
           return `
-            <article class="moodle-section ${isActive ? "active" : ""}" id="course-section-${module.id}">
+            <article class="moodle-module-shell ${isActive ? "active" : ""}" id="course-section-${module.id}">
               <div class="moodle-section-head">
                 <button class="moodle-section-title" onclick="selectModule('${course.id}','${module.id}')" ${locked ? "disabled" : ""}>
-                  <span>Section ${index + 1}</span>
+                  <span>Module ${index + 1}</span>
                   <strong>${escapeHtml(module.title)}</strong>
                 </button>
                 <div class="badge-row">
@@ -4929,14 +5025,40 @@ function renderCourseSectionFormat(course, user, activeModule, activeLesson) {
                 </div>
               </div>
               ${module.summary ? `<p class="meta">${escapeHtml(module.summary)}</p>` : ""}
-              <div class="moodle-activity-list">
-                ${lessons.concat(activities, games).map((item) => renderCourseModuleItem(course, module, item, user)).join("") || `<div class="empty-state">Aucun contenu dans cette section.</div>`}
+              <div class="moodle-topic-list">
+                ${sections.map((section, sectionIndex) => {
+                  const lessons = getSectionLessons(module, section.id).map((lesson) => ({ ...lesson, kind: "lesson", sectionId: section.id }));
+                  const activities = getSectionActivities(course.id, module.id, section.id).map((activity) => ({ ...activity, kind: "activity", sectionId: section.id }));
+                  const games = getLinkedGameQuizzesForModule(course, module.id, user).filter((quiz) => !quiz.sectionId || quiz.sectionId === section.id).map((quiz) => ({ ...quiz, kind: "game", sectionId: section.id }));
+                  return `
+                    <article class="moodle-section ${activeLesson && lessons.some((lesson) => lesson.id === activeLesson.id) ? "active" : ""}" draggable="${canManage}" ondragstart="startCourseSectionDrag(event,'${section.id}')" ondragover="allowCourseDrop(event)" ondrop="dropCourseSection(event,'${course.id}','${module.id}','${section.id}')">
+                      <div class="moodle-topic-head">
+                        <div>
+                          <p class="eyebrow">Section ${sectionIndex + 1}</p>
+                          <h4>${escapeHtml(section.title)}</h4>
+                          ${section.summary ? `<p class="meta">${escapeHtml(section.summary)}</p>` : ""}
+                        </div>
+                        ${canManage ? `<div class="toolbar">
+                          <button class="btn-ghost" onclick="openCourseSectionEditor('${course.id}','${module.id}','${section.id}')">Modifier</button>
+                          <button class="btn-ghost" onclick="removeCourseSection('${course.id}','${module.id}','${section.id}')">Supprimer</button>
+                        </div>` : ""}
+                      </div>
+                      <div class="moodle-activity-list" ondragover="allowCourseDrop(event)" ondrop="dropCourseItem(event,'${course.id}','${module.id}','${section.id}')">
+                        ${lessons.concat(activities, games).sort((a, b) => (a.order || 0) - (b.order || 0)).map((item) => renderCourseModuleItem(course, module, item, user)).join("") || `<div class="empty-state">Aucun contenu dans cette section.</div>`}
+                      </div>
+                      ${canManage ? `<div class="toolbar moodle-section-actions">
+                        <button class="btn-ghost" onclick="openLessonBuilder('${course.id}','${module.id}','${section.id}')">Ajouter un cours / ressource</button>
+                        <button class="btn-ghost" onclick="openActivityBuilder('${course.id}','${module.id}','${section.id}')">Ajouter devoir / quiz</button>
+                      </div>` : ""}
+                    </article>
+                  `;
+                }).join("")}
               </div>
-              ${canTeachCourse(user, course) ? `
+              ${canManage ? `
                 <div class="toolbar moodle-section-actions">
                   <button class="btn-ghost" onclick="openModuleEditor('${course.id}','${module.id}')">Modifier la section</button>
-                  <button class="btn-ghost" onclick="openLessonBuilder('${course.id}','${module.id}')">Ajouter une leçon</button>
-                  <button class="btn-ghost" onclick="openActivityBuilder('${course.id}')">Ajouter devoir/quiz</button>
+                  <button class="btn-ghost" onclick="openCourseSectionBuilder('${course.id}','${module.id}')">Ajouter une section</button>
+                  <button class="btn-ghost" onclick="openLessonBuilder('${course.id}','${module.id}','${sections[0]?.id || ""}')">Ajouter une leçon</button>
                 </div>
               ` : ""}
             </article>
@@ -6661,15 +6783,17 @@ function openCourseBuilder() {
   `);
 }
 
-function openActivityBuilder(courseId) {
+function openActivityBuilder(courseId, moduleId = "", sectionId = "") {
   const course = getCourseById(courseId || state.ui.activeCourseId);
   if (!course) return;
+  const selectedModule = course.modules.find((module) => module.id === moduleId) || course.modules[0];
+  const selectedSectionId = sectionId || getModuleDefaultSectionId(selectedModule || {});
   openModal(`
     <h2>Ajouter une activité</h2>
     <form id="activity-form" data-course-id="${course.id}" class="form-grid" style="margin-top:18px">
       <div class="field"><label for="activity-title">Titre</label><input id="activity-title" name="title" required></div>
       <div class="field"><label for="activity-type">Type</label><select id="activity-type" name="type"><option value="assignment">Devoir</option><option value="quiz">Quiz</option></select></div>
-      <div class="field"><label for="activity-module">Module</label><select id="activity-module" name="moduleId">${course.modules.map((module) => `<option value="${module.id}">${escapeHtml(module.title)}</option>`).join("")}</select></div>
+      <div class="field"><label for="activity-section">Section du module</label><select id="activity-section" name="sectionTarget">${renderModuleSectionOptions(course, selectedModule?.id || "", selectedSectionId)}</select></div>
       <div class="field"><label for="activity-due">Échéance</label><input id="activity-due" name="dueDate" type="date" required></div>
       <div class="field"><label for="activity-time-limit">Temps quiz (min)</label><input id="activity-time-limit" name="timeLimitMinutes" type="number" min="5" value="20"></div>
       <div class="field"><label for="activity-attempts">Tentatives</label><input id="activity-attempts" name="attemptsAllowed" type="number" min="1" value="1"></div>
@@ -6767,12 +6891,14 @@ function openActivityEditor(activityId) {
   const activity = getActivityById(activityId);
   const course = getCourseById(activity?.courseId);
   if (!activity || !course) return;
+  const activityModule = course.modules.find((module) => module.id === activity.moduleId) || course.modules[0];
+  const activitySectionId = activity.sectionId || getModuleDefaultSectionId(activityModule || {});
   openModal(`
     <h2>Modifier l'activité</h2>
     <form id="activity-edit-form" data-activity-id="${activity.id}" class="form-grid" style="margin-top:18px">
       <div class="field"><label for="edit-activity-title">Titre</label><input id="edit-activity-title" name="title" value="${escapeHtml(activity.title)}" required></div>
       <div class="field"><label for="edit-activity-type">Type</label><select id="edit-activity-type" name="type"><option value="assignment" ${activity.type === "assignment" ? "selected" : ""}>Devoir</option><option value="quiz" ${activity.type === "quiz" ? "selected" : ""}>Quiz</option></select></div>
-      <div class="field"><label for="edit-activity-module">Module</label><select id="edit-activity-module" name="moduleId">${course.modules.map((module) => `<option value="${module.id}" ${activity.moduleId === module.id ? "selected" : ""}>${escapeHtml(module.title)}</option>`).join("")}</select></div>
+      <div class="field"><label for="edit-activity-section">Section du module</label><select id="edit-activity-section" name="sectionTarget">${renderModuleSectionOptions(course, activityModule?.id || "", activitySectionId)}</select></div>
       <div class="field"><label for="edit-activity-due">Échéance</label><input id="edit-activity-due" name="dueDate" type="date" value="${new Date(activity.dueDate).toISOString().slice(0, 10)}" required></div>
       <div class="field"><label for="edit-activity-time-limit">Temps quiz (min)</label><input id="edit-activity-time-limit" name="timeLimitMinutes" type="number" min="5" value="${activity.timeLimitMinutes || 20}"></div>
       <div class="field"><label for="edit-activity-attempts">Tentatives</label><input id="edit-activity-attempts" name="attemptsAllowed" type="number" min="1" value="${activity.attemptsAllowed || 1}"></div>
@@ -7065,14 +7191,46 @@ function openModuleEditor(courseId, moduleId) {
   `);
 }
 
-function openLessonBuilder(courseId, moduleId) {
+function openCourseSectionBuilder(courseId, moduleId) {
+  const course = getCourseById(courseId);
+  const module = course?.modules.find((item) => item.id === moduleId);
+  if (!course || !module) return;
+  openModal(`
+    <h2>Ajouter une section</h2>
+    <p class="section-subtitle">Une section correspond à un chapitre, une unité ou une séquence pédagogique dans le module.</p>
+    <form id="course-section-form" data-course-id="${course.id}" data-module-id="${module.id}" class="form-grid" style="margin-top:18px">
+      <div class="field full"><label for="section-title">Titre de la section</label><input id="section-title" name="title" placeholder="Ex: Introduction au mouvement" required></div>
+      <div class="field full"><label for="section-summary">Description courte</label><textarea id="section-summary" name="summary" placeholder="Présentez l'objectif de cette unité."></textarea></div>
+      <div class="field full"><button class="btn-primary" type="submit">Créer la section</button></div>
+    </form>
+  `);
+}
+
+function openCourseSectionEditor(courseId, moduleId, sectionId) {
+  const course = getCourseById(courseId);
+  const module = course?.modules.find((item) => item.id === moduleId);
+  const section = module ? getModuleSectionById(module, sectionId) : null;
+  if (!course || !module || !section) return;
+  openModal(`
+    <h2>Modifier la section</h2>
+    <form id="course-section-edit-form" data-course-id="${course.id}" data-module-id="${module.id}" data-section-id="${section.id}" class="form-grid" style="margin-top:18px">
+      <div class="field full"><label for="edit-section-title">Titre</label><input id="edit-section-title" name="title" value="${escapeHtml(section.title)}" required></div>
+      <div class="field full"><label for="edit-section-summary">Description courte</label><textarea id="edit-section-summary" name="summary">${escapeHtml(section.summary || "")}</textarea></div>
+      <div class="field full"><button class="btn-primary" type="submit">Enregistrer la section</button></div>
+    </form>
+  `);
+}
+
+function openLessonBuilder(courseId, moduleId, sectionId = "") {
   const course = getCourseById(courseId || state.ui.activeCourseId);
   const module = course?.modules.find((item) => item.id === moduleId) || course?.modules[0];
   if (!course || !module) return;
+  const selectedSectionId = sectionId || getModuleDefaultSectionId(module);
   openModal(`
     <h2>Ajouter une leçon</h2>
     <form id="lesson-form" data-course-id="${course.id}" data-module-id="${module.id}" class="form-grid" style="margin-top:18px">
       <div class="field full"><label for="lesson-title">Titre</label><input id="lesson-title" name="title" required></div>
+      <div class="field full"><label for="lesson-section">Section</label><select id="lesson-section" name="sectionId">${normalizeModuleSections(module).map((section) => `<option value="${section.id}" ${section.id === selectedSectionId ? "selected" : ""}>${escapeHtml(section.title)}</option>`).join("")}</select></div>
       <div class="field"><label for="lesson-type">Type</label><select id="lesson-type" name="type">
         <option value="reading">📄 Lecture / Texte</option>
         <option value="video">🎬 Vidéo</option>
@@ -7121,6 +7279,7 @@ function openLessonEditor(courseId, moduleId, lessonId) {
     <h2>Modifier la leçon</h2>
     <form id="lesson-edit-form" data-course-id="${course.id}" data-module-id="${module.id}" data-lesson-id="${lesson.id}" class="form-grid" style="margin-top:18px">
       <div class="field full"><label for="edit-lesson-title">Titre</label><input id="edit-lesson-title" name="title" value="${escapeHtml(lesson.title)}" required></div>
+      <div class="field full"><label for="edit-lesson-section">Section</label><select id="edit-lesson-section" name="sectionId">${normalizeModuleSections(module).map((section) => `<option value="${section.id}" ${section.id === (lesson.sectionId || getModuleDefaultSectionId(module)) ? "selected" : ""}>${escapeHtml(section.title)}</option>`).join("")}</select></div>
       <div class="field"><label for="edit-lesson-type">Type</label><select id="edit-lesson-type" name="type">
         <option value="reading" ${lesson.type === "reading" ? "selected" : ""}>📄 Lecture / Texte</option>
         <option value="video" ${lesson.type === "video" ? "selected" : ""}>🎬 Vidéo</option>
@@ -8038,6 +8197,8 @@ function bindForms() {
   document.getElementById("quiz-question-edit-form")?.addEventListener("submit", handleQuizQuestionEdit);
   document.getElementById("module-form")?.addEventListener("submit", handleModuleCreate);
   document.getElementById("module-edit-form")?.addEventListener("submit", handleModuleEdit);
+  document.getElementById("course-section-form")?.addEventListener("submit", handleCourseSectionCreate);
+  document.getElementById("course-section-edit-form")?.addEventListener("submit", handleCourseSectionEdit);
   document.getElementById("lesson-form")?.addEventListener("submit", handleLessonCreate);
   document.getElementById("lesson-edit-form")?.addEventListener("submit", handleLessonEdit);
   document.getElementById("live-class-form")?.addEventListener("submit", handleLiveClassCreate);
@@ -8410,8 +8571,12 @@ async function handleCourseCreate(event) {
     createdAt: nowISO(),
     enrolledUserIds: [],
     liveClasses: [],
-    modules: [{ id: crypto.randomUUID(), title: "Module 1 - Démarrage", summary: "Module initial généré automatiquement.", order: 1, lessons: [{ id: crypto.randomUUID(), title: "Leçon d'introduction", type: "reading", duration: "10 min", content: "Ajoutez ici les objectifs, contenus et consignes de départ.", learningObjectives: "", targetedCompetencies: "", atlSkills: [], atlNotes: "", resources: [] }] }]
+    modules: []
   };
+  const starterModule = { id: crypto.randomUUID(), title: "Module 1 - Démarrage", summary: "Module initial généré automatiquement.", order: 1, sections: [], lessons: [] };
+  starterModule.sections = [defaultModuleSection(starterModule)];
+  starterModule.lessons = [{ id: crypto.randomUUID(), title: "Leçon d'introduction", sectionId: starterModule.sections[0].id, type: "reading", duration: "10 min", content: "Ajoutez ici les objectifs, contenus et consignes de départ.", learningObjectives: "", targetedCompetencies: "", atlSkills: [], atlNotes: "", resources: [] }];
+  newCourse.modules = [starterModule];
   state.courses.unshift(newCourse);
   if (shouldUseSupabasePersistence()) {
     try {
@@ -8493,13 +8658,16 @@ async function handleActivityCreate(event) {
   const formData = new FormData(event.currentTarget);
   const courseId = event.currentTarget.dataset.courseId;
   const course = getCourseById(courseId);
-  const moduleId = String(formData.get("moduleId"));
+  const target = parseModuleSectionTarget(formData.get("sectionTarget"));
+  const moduleId = target.moduleId;
   const module = course.modules.find((item) => item.id === moduleId);
   const base = {
     id: crypto.randomUUID(),
     courseId,
     moduleId,
+    sectionId: target.sectionId || getModuleDefaultSectionId(module || {}),
     lessonId: module?.lessons[0]?.id || null,
+    order: getSectionActivities(courseId, moduleId, target.sectionId || getModuleDefaultSectionId(module || {})).length + 1,
     title: String(formData.get("title")).trim(),
     type: String(formData.get("type")),
     description: String(formData.get("description")).trim(),
@@ -8545,6 +8713,7 @@ async function handleActivityCreate(event) {
   course.enrolledUserIds.forEach((userId) => addNotification({ userId, title: "Nouvelle activite disponible", message: `${base.title} a ete ajoute au cours ${course.title}.`, level: "warning" }));
   const remote = await publishPlatformEvent("activity.created", { activity: base, courseId });
   mergeRemoteEntity(base, extractRemoteEntity(remote, "activity"));
+  await publishPlatformEvent("course.updated", { course });
   closeModal();
   saveState();
 }
@@ -8556,7 +8725,9 @@ async function handleActivityEdit(event) {
   const formData = new FormData(event.currentTarget);
   activity.title = String(formData.get("title")).trim();
   activity.type = String(formData.get("type")).trim();
-  activity.moduleId = String(formData.get("moduleId")).trim();
+  const target = parseModuleSectionTarget(formData.get("sectionTarget"));
+  activity.moduleId = target.moduleId || activity.moduleId;
+  activity.sectionId = target.sectionId || activity.sectionId || getModuleDefaultSectionId(getCourseById(activity.courseId)?.modules.find((module) => module.id === activity.moduleId) || {});
   activity.description = String(formData.get("description")).trim();
   activity.resourceTitle = String(formData.get("resourceTitle") || "").trim();
   activity.resourceUrl = String(formData.get("resourceUrl") || "").trim();
@@ -8579,6 +8750,8 @@ async function handleActivityEdit(event) {
   }
   const remote = await publishPlatformEvent("activity.updated", { activity });
   mergeRemoteEntity(activity, extractRemoteEntity(remote, "activity"));
+  const course = getCourseById(activity.courseId);
+  if (course) await publishPlatformEvent("course.updated", { course });
   closeModal();
   saveState();
 }
@@ -8816,8 +8989,10 @@ async function handleModuleCreate(event) {
     title: String(formData.get("title")).trim(),
     summary: String(formData.get("summary")).trim(),
     order: course.modules.length + 1,
+    sections: [],
     lessons: []
   };
+  module.sections = [defaultModuleSection(module)];
   course.modules.push(module);
   course.release = normalizeCourseReleaseState(course.release);
   course.release.modules[module.id] = true;
@@ -8867,6 +9042,39 @@ async function handleModuleEdit(event) {
   saveState();
 }
 
+async function handleCourseSectionCreate(event) {
+  event.preventDefault();
+  const course = getCourseById(event.currentTarget.dataset.courseId);
+  const module = course?.modules.find((item) => item.id === event.currentTarget.dataset.moduleId);
+  if (!course || !module || !canTeachCourse(getCurrentUser(), course)) return;
+  const formData = new FormData(event.currentTarget);
+  normalizeModuleSections(module);
+  const section = {
+    id: crypto.randomUUID(),
+    title: String(formData.get("title")).trim(),
+    summary: String(formData.get("summary") || "").trim(),
+    order: module.sections.length + 1
+  };
+  module.sections.push(section);
+  closeModal();
+  await persistCourseStructure(course, `Section ajoutée - ${course.title}`);
+  setScreen("course", { activeCourseId: course.id, currentModuleId: module.id, currentLessonId: state.ui.currentLessonId || null });
+}
+
+async function handleCourseSectionEdit(event) {
+  event.preventDefault();
+  const course = getCourseById(event.currentTarget.dataset.courseId);
+  const module = course?.modules.find((item) => item.id === event.currentTarget.dataset.moduleId);
+  const section = module ? getModuleSectionById(module, event.currentTarget.dataset.sectionId) : null;
+  if (!course || !module || !section || !canTeachCourse(getCurrentUser(), course)) return;
+  const formData = new FormData(event.currentTarget);
+  section.title = String(formData.get("title")).trim();
+  section.summary = String(formData.get("summary") || "").trim();
+  closeModal();
+  await persistCourseStructure(course, `Section modifiée - ${course.title}`);
+  setScreen("course", { activeCourseId: course.id, currentModuleId: module.id, currentLessonId: state.ui.currentLessonId || null });
+}
+
 async function handleLessonCreate(event) {
   event.preventDefault();
   const course = getCourseById(event.currentTarget.dataset.courseId);
@@ -8881,6 +9089,8 @@ async function handleLessonCreate(event) {
   const lesson = {
     id: crypto.randomUUID(),
     title: String(formData.get("title")).trim(),
+    sectionId: String(formData.get("sectionId") || getModuleDefaultSectionId(module)).trim(),
+    order: getSectionLessons(module, String(formData.get("sectionId") || getModuleDefaultSectionId(module)).trim()).length + 1,
     type: String(formData.get("type")).trim(),
     duration: String(formData.get("duration")).trim(),
     content: sections.courseContent || "",
@@ -8932,6 +9142,7 @@ async function handleLessonEdit(event) {
   const resourceUrl = String(formData.get("resourceUrl")).trim();
   const resourceType = String(formData.get("resourceType") || "link").trim();
   lesson.title = String(formData.get("title")).trim();
+  lesson.sectionId = String(formData.get("sectionId") || getModuleDefaultSectionId(module)).trim();
   lesson.type = String(formData.get("type")).trim();
   lesson.duration = String(formData.get("duration")).trim();
   lesson.sections = buildLessonSectionsFromForm(formData);
@@ -9023,6 +9234,92 @@ async function removeLiveClass(courseId, liveClassId) {
   course.liveClasses = normalizeLiveClasses(course).filter((item) => item.id !== liveClassId);
   await persistCourseLiveClasses(course, `Classe en direct supprimée - ${course.title}`);
   renderApp();
+}
+
+function allowCourseDrop(event) {
+  event.preventDefault();
+}
+
+function startCourseSectionDrag(event, sectionId) {
+  event.dataTransfer?.setData("text/course-section", sectionId);
+}
+
+function startCourseItemDrag(event, kind, itemId) {
+  event.dataTransfer?.setData("text/course-item", JSON.stringify({ kind, itemId }));
+}
+
+async function dropCourseSection(event, courseId, moduleId, targetSectionId) {
+  event.preventDefault();
+  const draggedSectionId = event.dataTransfer?.getData("text/course-section");
+  if (!draggedSectionId || draggedSectionId === targetSectionId) return;
+  const course = getCourseById(courseId);
+  const module = course?.modules.find((item) => item.id === moduleId);
+  if (!course || !module || !canTeachCourse(getCurrentUser(), course)) return;
+  const sections = normalizeModuleSections(module);
+  const from = sections.findIndex((section) => section.id === draggedSectionId);
+  const to = sections.findIndex((section) => section.id === targetSectionId);
+  if (from < 0 || to < 0) return;
+  const [moved] = sections.splice(from, 1);
+  sections.splice(to, 0, moved);
+  module.sections = sections.map((section, index) => ({ ...section, order: index + 1 }));
+  await persistCourseStructure(course, `Sections réorganisées - ${course.title}`);
+}
+
+async function dropCourseItem(event, courseId, moduleId, targetSectionId, targetKind = "", targetItemId = "") {
+  event.preventDefault();
+  const raw = event.dataTransfer?.getData("text/course-item");
+  if (!raw || !targetSectionId) return;
+  let dragged;
+  try {
+    dragged = JSON.parse(raw);
+  } catch {
+    return;
+  }
+  const course = getCourseById(courseId);
+  const module = course?.modules.find((item) => item.id === moduleId);
+  if (!course || !module || !canTeachCourse(getCurrentUser(), course)) return;
+  const itemList = [
+    ...(module.lessons || []).map((lesson) => ({ source: lesson, kind: "lesson" })),
+    ...getModuleActivities(courseId, moduleId).map((activity) => ({ source: activity, kind: "activity" }))
+  ];
+  const draggedEntry = itemList.find((entry) => entry.kind === dragged.kind && entry.source.id === dragged.itemId);
+  if (!draggedEntry) return;
+  draggedEntry.source.sectionId = targetSectionId;
+  const targetOrder = itemList.find((entry) => entry.kind === targetKind && entry.source.id === targetItemId)?.source.order || 9999;
+  draggedEntry.source.order = targetOrder;
+  const targetItems = itemList
+    .filter((entry) => (entry.source.sectionId || getModuleDefaultSectionId(module)) === targetSectionId)
+    .sort((a, b) => {
+      if (a.source.id === draggedEntry.source.id) return -1;
+      if (b.source.id === draggedEntry.source.id) return 1;
+      return (a.source.order || 0) - (b.source.order || 0);
+    });
+  targetItems.forEach((entry, index) => {
+    entry.source.order = index + 1;
+  });
+  await persistCourseStructure(course, `Contenus réorganisés - ${course.title}`);
+}
+
+async function removeCourseSection(courseId, moduleId, sectionId) {
+  const course = getCourseById(courseId);
+  const module = course?.modules.find((item) => item.id === moduleId);
+  if (!course || !module || !canTeachCourse(getCurrentUser(), course)) return;
+  const sections = normalizeModuleSections(module);
+  if (sections.length <= 1) {
+    alert("Un module doit garder au moins une section.");
+    return;
+  }
+  const section = sections.find((item) => item.id === sectionId);
+  if (!section || !confirm(`Supprimer la section "${section.title}" ? Les contenus seront déplacés dans la première section restante.`)) return;
+  const fallbackSection = sections.find((item) => item.id !== sectionId);
+  (module.lessons || []).forEach((lesson) => {
+    if ((lesson.sectionId || getModuleDefaultSectionId(module)) === sectionId) lesson.sectionId = fallbackSection.id;
+  });
+  getModuleActivities(courseId, moduleId).forEach((activity) => {
+    if ((activity.sectionId || getModuleDefaultSectionId(module)) === sectionId) activity.sectionId = fallbackSection.id;
+  });
+  module.sections = sections.filter((item) => item.id !== sectionId).map((item, index) => ({ ...item, order: index + 1 }));
+  await persistCourseStructure(course, `Section supprimée - ${course.title}`);
 }
 
 async function archiveCourse(courseId) {
@@ -9813,6 +10110,8 @@ window.openQuestionBankBuilder = openQuestionBankBuilder;
 window.attachQuestionToQuiz = attachQuestionToQuiz;
 window.openModuleBuilder = openModuleBuilder;
 window.openModuleEditor = openModuleEditor;
+window.openCourseSectionBuilder = openCourseSectionBuilder;
+window.openCourseSectionEditor = openCourseSectionEditor;
 window.openLessonBuilder = openLessonBuilder;
 window.openLessonEditor = openLessonEditor;
 window.openLiveClassBuilder = openLiveClassBuilder;
@@ -9852,8 +10151,14 @@ window.archiveCourse = archiveCourse;
 window.restoreCourse = restoreCourse;
 window.removeCourse = removeCourse;
 window.removeModule = removeModule;
+window.removeCourseSection = removeCourseSection;
 window.removeLesson = removeLesson;
 window.toggleLessonCompletion = toggleLessonCompletion;
 window.setAdminFilter = setAdminFilter;
 window.removeUser = removeUser;
+window.allowCourseDrop = allowCourseDrop;
+window.startCourseSectionDrag = startCourseSectionDrag;
+window.startCourseItemDrag = startCourseItemDrag;
+window.dropCourseSection = dropCourseSection;
+window.dropCourseItem = dropCourseItem;
 

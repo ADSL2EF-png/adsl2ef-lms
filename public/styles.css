@@ -397,6 +397,21 @@ a { color: inherit; }
   gap: 14px;
   margin-top: 16px;
 }
+.moodle-module-shell {
+  border: 1px solid rgba(23,71,166,0.18);
+  border-radius: 20px;
+  padding: 16px;
+  background: rgba(255,255,255,0.8);
+}
+.moodle-module-shell.active {
+  border-color: rgba(23,71,166,0.42);
+  background: #fff;
+}
+.moodle-topic-list {
+  display: grid;
+  gap: 12px;
+  margin-top: 14px;
+}
 .moodle-section {
   border: 1px solid rgba(23,71,166,0.14);
   border-radius: 18px;
@@ -407,6 +422,20 @@ a { color: inherit; }
 .moodle-section.active {
   border-color: rgba(23,71,166,0.38);
   box-shadow: 0 16px 38px rgba(23,71,166,0.12);
+}
+.moodle-section[draggable="true"],
+.moodle-activity[draggable="true"] {
+  cursor: grab;
+}
+.moodle-topic-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+.moodle-topic-head h4 {
+  margin: 2px 0 4px;
+  font-size: 1.02rem;
 }
 .moodle-section-head {
   display: flex;
@@ -1212,6 +1241,13 @@ th { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-
     gap: 11px;
     margin-top: 12px;
   }
+  .moodle-module-shell {
+    padding: 12px;
+    border-radius: 17px;
+  }
+  .moodle-topic-list {
+    gap: 10px;
+  }
   .moodle-section {
     padding: 12px;
     border-radius: 16px;
@@ -1223,6 +1259,13 @@ th { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-
   .moodle-section-head .badge-row {
     width: 100%;
     justify-content: flex-start;
+  }
+  .moodle-topic-head {
+    flex-direction: column;
+    gap: 8px;
+  }
+  .moodle-topic-head .toolbar {
+    width: 100%;
   }
   .moodle-section-title strong {
     font-size: 1rem;
