@@ -8594,6 +8594,7 @@ async function handleModuleCreate(event) {
   });
   closeModal();
   openCourse(course.id);
+  saveState();
 }
 
 async function handleModuleEdit(event) {
@@ -8616,6 +8617,7 @@ async function handleModuleEdit(event) {
   mergeRemoteEntity(module, extractRemoteEntity(remote, "module"));
   closeModal();
   openCourse(course.id);
+  saveState();
 }
 
 async function handleLessonCreate(event) {
@@ -8667,6 +8669,7 @@ async function handleLessonCreate(event) {
     currentModuleId: module.id,
     currentLessonId: module.lessons[module.lessons.length - 1].id
   });
+  saveState();
 }
 
 async function handleLessonEdit(event) {
@@ -8699,6 +8702,7 @@ async function handleLessonEdit(event) {
   mergeRemoteEntity(lesson, extractRemoteEntity(remote, "lesson"));
   closeModal();
   setScreen("course", { activeCourseId: course.id, currentModuleId: module.id, currentLessonId: lesson.id });
+  saveState();
 }
 
 function buildLiveClassFromForm(formData, base = {}) {
@@ -8874,6 +8878,7 @@ async function removeModule(courseId, moduleId) {
   addLog(getCurrentUser().id, `Module supprimé - ${course.title}`);
   await publishPlatformEvent("module.deleted", { courseId, moduleId });
   openCourse(courseId);
+  saveState();
 }
 
 async function removeLesson(courseId, moduleId, lessonId) {
@@ -8899,6 +8904,7 @@ async function removeLesson(courseId, moduleId, lessonId) {
   addLog(getCurrentUser().id, `Leçon supprimée - ${course.title}`);
   await publishPlatformEvent("lesson.deleted", { courseId, moduleId, lessonId });
   openCourse(courseId);
+  saveState();
 }
 
 async function removeUser(userId) {

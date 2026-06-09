@@ -463,6 +463,92 @@ function preserveUserPasswordHashes(nextState, previousState) {
   return nextState;
 }
 
+function mergeReleaseState(previousRelease, nextRelease) {
+  const previous = previousRelease && typeof previousRelease === "object" ? previousRelease : {};
+  const next = nextRelease && typeof nextRelease === "object" ? nextRelease : {};
+  return {
+    modules: {
+      ...(previous.modules && typeof previous.modules === "object" ? previous.modules : {}),
+      ...(next.modules && typeof next.modules === "object" ? next.modules : {})
+    },
+    lessons: {
+      ...(previous.lessons && typeof previous.lessons === "object" ? previous.lessons : {}),
+      ...(next.lessons && typeof next.lessons === "object" ? next.lessons : {})
+    }
+  };
+}
+
+function mergeLessonsPreservingContent(previousLessons, nextLessons) {
+  const merged = [];
+  const previousById = new Map(ensureArray(previousLessons).map((lesson) => [lesson.id, lesson]));
+  const seen = new Set();
+
+  ensureArray(nextLessons).forEach((lesson) => {
+    if (!lesson?.id) return;
+    const previous = previousById.get(lesson.id);
+    merged.push(previous ? { ...previous, ...lesson } : lesson);
+    seen.add(lesson.id);
+  });
+
+  ensureArray(previousLessons).forEach((lesson) => {
+    if (lesson?.id && !seen.has(lesson.id)) merged.push(lesson);
+  });
+
+  return merged.sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+}
+
+function mergeModulesPreservingContent(previousModules, nextModules) {
+  const merged = [];
+  const previousById = new Map(ensureArray(previousModules).map((module) => [module.id, module]));
+  const seen = new Set();
+
+  ensureArray(nextModules).forEach((module) => {
+    if (!module?.id) return;
+    const previous = previousById.get(module.id);
+    merged.push({
+      ...(previous || {}),
+      ...module,
+      lessons: mergeLessonsPreservingContent(previous?.lessons, module.lessons)
+    });
+    seen.add(module.id);
+  });
+
+  ensureArray(previousModules).forEach((module) => {
+    if (module?.id && !seen.has(module.id)) merged.push(module);
+  });
+
+  return merged.sort((a, b) => Number(a.order || 0) - Number(b.order || 0));
+}
+
+function mergeCoursePreservingContent(previousCourse, nextCourse) {
+  if (!previousCourse) return nextCourse;
+  if (!nextCourse) return previousCourse;
+  return {
+    ...previousCourse,
+    ...nextCourse,
+    modules: mergeModulesPreservingContent(previousCourse.modules, nextCourse.modules),
+    release: mergeReleaseState(previousCourse.release, nextCourse.release)
+  };
+}
+
+function preserveCourseContent(nextState, previousState) {
+  const previousCourses = ensureArray(previousState?.courses);
+  const nextCourses = ensureArray(nextState.courses);
+  const previousById = new Map(previousCourses.map((course) => [course.id, course]));
+  const nextIds = new Set();
+
+  nextState.courses = nextCourses.map((course) => {
+    nextIds.add(course.id);
+    return mergeCoursePreservingContent(previousById.get(course.id), course);
+  });
+
+  previousCourses.forEach((course) => {
+    if (course?.id && !nextIds.has(course.id)) nextState.courses.push(course);
+  });
+
+  return nextState;
+}
+
 function normalizePublicRegistrationRole(role) {
   const value = String(role || "").trim().toLowerCase();
   return value === "teacher" ? "teacher" : "student";
@@ -1225,8 +1311,9 @@ async function handlePutState(request, response) {
   const body = await readBody(request);
   const incoming = body.payload && typeof body.payload === "object" ? body.payload : body;
   const previousState = await loadState();
-  const state = preserveUserPasswordHashes(
-    sanitizeSharedState({ ...structuredClone(defaultState), ...incoming }),
+  const sanitizedState = sanitizeSharedState({ ...structuredClone(defaultState), ...incoming });
+  const state = preserveCourseContent(
+    preserveUserPasswordHashes(sanitizedState, previousState),
     previousState
   );
   await saveState(state);
@@ -2136,7 +2223,10 @@ async function applyEventToState(state, eventType, payload) {
     case "course.updated":
     case "course.archived":
     case "course.restored":
-      if (payload.course) replaceOrInsert(state.courses, payload.course);
+      if (payload.course) {
+        const existing = ensureArray(state.courses).find((course) => course.id === payload.course.id);
+        replaceOrInsert(state.courses, mergeCoursePreservingContent(existing, payload.course));
+      }
       return { course: payload.course };
     case "course.release.updated": {
       const course = state.courses.find((item) => item.id === payload.courseId);

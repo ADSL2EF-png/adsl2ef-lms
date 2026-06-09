@@ -3,7 +3,7 @@
  * VERSION : 2.0.0
  */
 
-const CACHE_NAME = "adsl2ef-v24-register-return";
+const CACHE_NAME = "adsl2ef-v25-course-content-sync";
 const OFFLINE_URL = "/offline.html";
 
 const PRECACHE_ASSETS = [
