@@ -345,8 +345,8 @@ const starterData = {
       tiktokUrl: "https://www.tiktok.com/@adsl2ef"
     },
     payments: {
-      mixxEnabled: true,
-      floozEnabled: true,
+      mixxEnabled: false,
+      floozEnabled: false,
       paygateEnabled: true,
       mode: "manual",
       callbackUrl: "",
@@ -3619,7 +3619,7 @@ function renderStudentSubscriptionPolicy(compact = false) {
       <div class="policy-grid">
         <div class="policy-card"><strong>1. Choisir le cours</strong><p>L'apprenant choisit un parcours publié dans l'École Numérique, le soutien scolaire, les langues, l'alphabétisation ou la formation adaptée.</p></div>
         <div class="policy-card"><strong>2. Paiement manuel</strong><p>Le bouton WhatsApp prépare la demande. L'équipe confirme le montant, le moyen de paiement et active l'accès après validation.</p></div>
-        <div class="policy-card"><strong>3. Paiement électronique</strong><p>Mixx, Flooz ou PayGate peuvent être utilisés si l'intégration est active. L'accès est validé après confirmation du paiement.</p></div>
+        <div class="policy-card"><strong>3. Paiement électronique</strong><p>PayGate peut être utilisé lorsque l'intégration est active. L'accès est validé après confirmation du paiement.</p></div>
         <div class="policy-card"><strong>4. Accès au LMS</strong><p>Après validation, l'apprenant se connecte, ouvre son cours et suit les leçons, ressources, devoirs, quiz et communications.</p></div>
         <div class="policy-card"><strong>5. Suivi pédagogique</strong><p>La progression, les devoirs, l'assiduité et le cahier de textes app ADSL-2EF servent au suivi régulier de l'apprenant.</p></div>
         <div class="policy-card"><strong>6. Règles d'usage</strong><p>Les contenus restent réservés aux inscrits. Le partage non autorisé des liens, supports ou comptes peut entraîner la suspension de l'accès.</p></div>
@@ -6674,14 +6674,11 @@ function openPlatformSettings() {
       <div class="field full"><label for="site-linkedin">LinkedIn</label><input id="site-linkedin" name="siteLinkedin" value="${escapeHtml(site.linkedinUrl || "")}"></div>
       <div class="field full"><label for="site-tiktok">TikTok ADSL-2EF</label><input id="site-tiktok" name="siteTiktok" value="${escapeHtml(site.tiktokUrl || "")}"></div>
       <div class="field full"><label for="site-tiktok-founder">TikTok Promoteur</label><input id="site-tiktok-founder" name="siteTiktokFounder" value="${escapeHtml(site.tiktokFounderUrl || "")}"></div>
-      <div class="field"><label for="mixx-enabled">Mixx by Yas</label><select id="mixx-enabled" name="mixxEnabled"><option value="true" ${payments.mixxEnabled ? "selected" : ""}>Activé</option><option value="false" ${!payments.mixxEnabled ? "selected" : ""}>Désactivé</option></select></div>
-      <div class="field"><label for="flooz-enabled">Flooz</label><select id="flooz-enabled" name="floozEnabled"><option value="true" ${payments.floozEnabled ? "selected" : ""}>Activé</option><option value="false" ${!payments.floozEnabled ? "selected" : ""}>Désactivé</option></select></div>
       <div class="field"><label for="paygate-enabled">PayGate Global</label><select id="paygate-enabled" name="paygateEnabled"><option value="true" ${payments.paygateEnabled ? "selected" : ""}>Activé</option><option value="false" ${!payments.paygateEnabled ? "selected" : ""}>Désactivé</option></select></div>
       <div class="field"><label for="payment-mode">Mode de paiement</label><select id="payment-mode" name="paymentMode"><option value="manual" ${payments.mode === "manual" ? "selected" : ""}>Validation manuelle</option><option value="callback" ${payments.mode === "callback" ? "selected" : ""}>Callback automatique</option></select></div>
       <div class="field"><label for="payment-callback">URL callback</label><input id="payment-callback" name="paymentCallback" value="${escapeHtml(payments.callbackUrl)}" placeholder="https://votre-api/paiement"></div>
-      <div class="field"><label for="merchant-mixx">Compte Mixx</label><input id="merchant-mixx" name="merchantMixx" value="${escapeHtml(payments.merchantMixx)}"></div>
-      <div class="field"><label for="merchant-flooz">Compte Flooz</label><input id="merchant-flooz" name="merchantFlooz" value="${escapeHtml(payments.merchantFlooz)}"></div>
       <div class="field"><label for="merchant-paygate">Compte PayGate</label><input id="merchant-paygate" name="merchantPaygate" value="${escapeHtml(payments.merchantPaygate || "")}"></div>
+      <div class="field full"><div class="announcement">Pour le moment, la vente utilise uniquement PayGate Global et le paiement manuel par WhatsApp.</div></div>
       <div class="field"><label for="persistence-mode">Mode de persistance</label><select id="persistence-mode" name="persistenceMode"><option value="local" ${persistence.mode === "local" ? "selected" : ""}>Local sécurisé temporaire</option><option value="jsonbin" ${persistence.mode === "jsonbin" ? "selected" : ""}>JSONBin pour contenus</option><option value="api" ${persistence.mode === "api" ? "selected" : ""}>API backend</option><option value="supabase" ${persistence.mode === "supabase" ? "selected" : ""}>Supabase</option></select></div>
       <div class="field"><label for="persistence-api-base">Base URL API</label><input id="persistence-api-base" name="persistenceApiBaseUrl" value="${escapeHtml(persistence.apiBaseUrl || "")}" placeholder="https://votre-api.com"></div>
       <div class="field"><label for="persistence-health-path">Route test backend</label><input id="persistence-health-path" name="persistenceHealthPath" value="${escapeHtml(persistence.healthPath || "/health")}" placeholder="/health"></div>
@@ -7466,8 +7463,6 @@ function purchaseCourse(courseId) {
     return;
   }
   const paymentChoices = [];
-  if (payments.mixxEnabled) paymentChoices.push(`<button class="btn-primary" onclick="processPayment('${courseId}','mixx')">Payer avec Mixx by Yas</button>`);
-  if (payments.floozEnabled) paymentChoices.push(`<button class="btn-primary" onclick="processPayment('${courseId}','flooz')">Payer avec Flooz</button>`);
   if (payments.paygateEnabled) paymentChoices.push(`<button class="btn-primary" onclick="processPayment('${courseId}','paygate')">Payer avec PayGate</button>`);
   if (payments.mode === "manual") paymentChoices.push(`<button class="btn-ghost" onclick="processPayment('${courseId}','manual')">Payer manuellement par WhatsApp</button>`);
   openModal(`
@@ -7475,7 +7470,7 @@ function purchaseCourse(courseId) {
     <p class="section-subtitle">Choisissez votre mode de paiement pour le cours <strong>${escapeHtml(course?.title || "")}</strong>.</p>
     <div class="module-card" style="margin-top:16px">
       <strong>Montant : ${formatPrice(course?.price || 0)}</strong>
-      <div class="meta" style="margin-top:8px">Mixx, Flooz et PayGate sont disponibles selon la configuration administrateur.</div>
+      <div class="meta" style="margin-top:8px">PayGate et WhatsApp sont disponibles pour cette souscription.</div>
     </div>
     <div class="announcement" style="margin-top:14px">Sécurité paiement : le cours n'est activé qu'après confirmation serveur. Ne partagez jamais votre mot de passe ni votre reçu dans un message public.</div>
     <div class="toolbar" style="margin-top:18px">
@@ -7516,8 +7511,6 @@ async function purchaseGameQuiz(quizId) {
   }
   const payments = state.config.payments || {};
   const paymentChoices = [];
-  if (payments.mixxEnabled) paymentChoices.push(`<button class="btn-primary" onclick="processGamePayment('${quiz.id}','mixx')">Payer avec Mixx by Yas</button>`);
-  if (payments.floozEnabled) paymentChoices.push(`<button class="btn-primary" onclick="processGamePayment('${quiz.id}','flooz')">Payer avec Flooz</button>`);
   if (payments.paygateEnabled) paymentChoices.push(`<button class="btn-primary" onclick="processGamePayment('${quiz.id}','paygate')">Payer avec PayGate</button>`);
   if (payments.mode === "manual") paymentChoices.push(`<button class="btn-ghost" onclick="processGamePayment('${quiz.id}','manual')">Payer manuellement par WhatsApp</button>`);
   openModal(`
@@ -7916,6 +7909,13 @@ async function processPayment(courseId, provider) {
   const user = getCurrentUser();
   const course = getCourseById(courseId);
   if (!user || !course) return;
+  if (!["manual", "paygate"].includes(String(provider || "").toLowerCase())) {
+    openModal(`
+      <h2>Mode de paiement indisponible</h2>
+      <p class="section-subtitle">Pour le moment, ADSL-2EF accepte uniquement PayGate Global et le paiement manuel par WhatsApp.</p>
+    `);
+    return;
+  }
   if (provider === "manual") {
     const localPayment = upsertPaymentRecord({
       id: crypto.randomUUID(),
@@ -7945,7 +7945,7 @@ async function processPayment(courseId, provider) {
   if (!shouldUseApiPersistence()) {
     openModal(`
       <h2>Backend paiement requis</h2>
-      <p class="section-subtitle">Les paiements réels Mixx/Flooz doivent être initialisés et confirmés côté serveur. Activez d'abord le mode <strong>API backend</strong> pour utiliser ce flux.</p>
+      <p class="section-subtitle">Le paiement PayGate doit être initialisé et confirmé côté serveur. Activez d'abord le mode <strong>API backend</strong> pour utiliser ce flux, ou choisissez WhatsApp.</p>
     `);
     return;
   }
@@ -8065,10 +8065,17 @@ async function processGamePayment(quizId, provider) {
     `);
     return;
   }
+  if (!["manual", "paygate"].includes(String(provider || "").toLowerCase())) {
+    openModal(`
+      <h2>Mode de paiement indisponible</h2>
+      <p class="section-subtitle">Pour le moment, ADSL-2EF accepte uniquement PayGate Global et le paiement manuel par WhatsApp.</p>
+    `);
+    return;
+  }
   if (!shouldUseApiPersistence()) {
     openModal(`
       <h2>Backend paiement requis</h2>
-      <p class="section-subtitle">Les paiements électroniques Mixx/Flooz/PayGate doivent être initialisés côté serveur. Utilisez le paiement manuel WhatsApp ou activez l'API backend.</p>
+      <p class="section-subtitle">Le paiement PayGate doit être initialisé côté serveur. Utilisez le paiement manuel WhatsApp ou activez l'API backend.</p>
     `);
     return;
   }
@@ -9862,13 +9869,13 @@ function handleSettingsSave(event) {
   state.config.site.linkedinUrl = String(formData.get("siteLinkedin") || "").trim();
   state.config.site.tiktokUrl = String(formData.get("siteTiktok") || "").trim();
   state.config.site.tiktokFounderUrl = String(formData.get("siteTiktokFounder") || "").trim();
-  state.config.payments.mixxEnabled = String(formData.get("mixxEnabled")) === "true";
-  state.config.payments.floozEnabled = String(formData.get("floozEnabled")) === "true";
+  state.config.payments.mixxEnabled = false;
+  state.config.payments.floozEnabled = false;
   state.config.payments.paygateEnabled = String(formData.get("paygateEnabled")) === "true";
   state.config.payments.mode = String(formData.get("paymentMode")).trim();
   state.config.payments.callbackUrl = String(formData.get("paymentCallback")).trim();
-  state.config.payments.merchantMixx = String(formData.get("merchantMixx")).trim();
-  state.config.payments.merchantFlooz = String(formData.get("merchantFlooz")).trim();
+  state.config.payments.merchantMixx = "";
+  state.config.payments.merchantFlooz = "";
   state.config.payments.merchantPaygate = String(formData.get("merchantPaygate")).trim();
   state.config.persistence.mode = String(formData.get("persistenceMode")).trim();
   state.config.persistence.apiBaseUrl = String(formData.get("persistenceApiBaseUrl")).trim();

@@ -227,12 +227,14 @@ const defaultState = {
       whatsappUrl: "https://wa.me/22893767621"
     },
     payments: {
-      mixxEnabled: true,
-      floozEnabled: true,
+      mixxEnabled: false,
+      floozEnabled: false,
+      paygateEnabled: true,
       mode: "manual",
       callbackUrl: "",
       merchantMixx: "",
-      merchantFlooz: ""
+      merchantFlooz: "",
+      merchantPaygate: ""
     },
     persistence: {
       mode: "api",
@@ -600,8 +602,6 @@ function normalizePaymentStatus(status) {
 
 function normalizePaymentProvider(provider) {
   const value = String(provider || "manual").trim().toLowerCase();
-  if (["mix", "mixx", "yas", "togocom"].includes(value)) return "mixx";
-  if (["flooz", "moov-flooz", "moov_flooz"].includes(value)) return "flooz";
   if (["paygate", "paygate-global", "paygate_global"].includes(value)) return "paygate";
   if (value === "manual") return "manual";
   return "";
