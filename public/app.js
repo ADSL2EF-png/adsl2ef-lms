@@ -63,7 +63,7 @@ const SCHOOL_PROGRAM_OPTIONS = [
     label: "Programme togolais",
     categories: [
       { value: "Collège", label: "Collège", matches: ["Collège"] },
-      { value: "Lycée", label: "Lycée", matches: ["Lycée Moderne", "Technique"] },
+      { value: "Lycée", label: "Lycée", matches: ["Lycée", "Lycée Moderne", "Technique"] },
       { value: "Adultes", label: "Candidats libres BAC/BEPC", matches: ["Adultes"] }
     ]
   },
@@ -898,7 +898,7 @@ function inferCourseLevel(course) {
     if (/3[eè]me/i.test(title)) return "3ème";
     return "6ème";
   }
-  if (course.category === "Lycée Moderne" || course.category === "Technique") {
+  if (course.category === "Lycée" || course.category === "Lycée Moderne" || course.category === "Technique") {
     if (/2nde|seconde/i.test(title)) return "2nde";
     if (/premi[eè]re|1[eè]re/i.test(title)) return "Première";
     return "Terminale";
@@ -954,7 +954,13 @@ function ensureAcademicCatalog(nextState) {
   };
   if (!nextState.ui.schoolLevel) nextState.ui.schoolLevel = "all";
   const selectedProgram = getSchoolProgram(nextState.ui.schoolProgram);
-  if (!selectedProgram.categories.some((category) => category.value === nextState.ui.schoolCategory)) {
+  const selectedCategory = selectedProgram.categories.find((category) => category.value === nextState.ui.schoolCategory)
+    || selectedProgram.categories.find((category) =>
+      (category.matches || []).some((item) => normalizeCategory(item) === normalizeCategory(nextState.ui.schoolCategory))
+    );
+  if (selectedCategory) {
+    nextState.ui.schoolCategory = selectedCategory.value;
+  } else {
     nextState.ui.schoolCategory = selectedProgram.categories[0]?.value || "Collège";
     nextState.ui.schoolLevel = "all";
   }
@@ -3503,9 +3509,17 @@ function setProCategory(category) {
 }
 
 function renderSchoolCategoryOptions(selectedValue = "") {
-  return SCHOOL_CATEGORY_OPTIONS
-    .map((category) => `<option value="${category.value}" ${selectedValue === category.value ? "selected" : ""}>${escapeHtml(category.label)}</option>`)
-    .join("");
+  const selected = String(selectedValue || "");
+  const programCategories = SCHOOL_PROGRAM_OPTIONS.flatMap((program) => program.categories.map((category) => category.value));
+  const legacySelected = selected && !programCategories.includes(selected) && selected !== "Formation Pro";
+  return [
+    legacySelected ? `<option value="${escapeHtml(selected)}" selected>Catégorie actuelle : ${escapeHtml(selected)}</option>` : "",
+    ...SCHOOL_PROGRAM_OPTIONS.map((program) => `
+      <optgroup label="${escapeHtml(program.label)}">
+        ${program.categories.map((category) => `<option value="${category.value}" ${selected === category.value ? "selected" : ""}>${escapeHtml(category.label)}</option>`).join("")}
+      </optgroup>
+    `)
+  ].join("");
 }
 
 function getAvailableSchoolLevels(category) {
@@ -6840,12 +6854,12 @@ function openCourseBuilder() {
     <p class="section-subtitle">Le cours est créé avec un premier module et une première leçon pour accélérer la mise en place.</p>
     <form id="course-form" class="form-grid" style="margin-top:18px">
       <div class="field"><label for="course-title">Titre</label><input id="course-title" name="title" required></div>
-      <div class="field"><label for="course-category">Catégorie</label><select id="course-category" name="category" required>
+      <div class="field"><label for="course-category">Programme / sous-onglet</label><select id="course-category" name="category" required>
         <option value="">-- Choisir --</option>
         ${renderSchoolCategoryOptions("")}
         <option value="Formation Pro">Formation Professionnelle</option>
       </select></div>
-      <div class="field"><label for="course-level">Sous-catégorie / classe</label><select id="course-level" name="level">${renderCourseLevelOptions("")}</select></div>
+      <div class="field"><label for="course-level">Classe / niveau</label><select id="course-level" name="level">${renderCourseLevelOptions("")}</select></div>
       <div class="field"><label for="course-audience">Audience</label><input id="course-audience" name="audience" required placeholder="Terminale D, Enseignants..."></div>
       <div class="field"><label for="course-duration">Durée</label><input id="course-duration" name="duration" list="course-duration-options" required placeholder="Ex: 8 semaines ou 3 mois"></div>
       <datalist id="course-duration-options"><option value="4 semaines"></option><option value="8 semaines"></option><option value="12 semaines"></option><option value="3 mois"></option><option value="6 mois"></option><option value="9 mois"></option><option value="1 an"></option></datalist>
@@ -6945,11 +6959,11 @@ function openCourseEditor(courseId) {
     <h2>Modifier le cours</h2>
     <form id="course-edit-form" data-course-id="${course.id}" class="form-grid" style="margin-top:18px">
       <div class="field"><label for="edit-course-title">Titre</label><input id="edit-course-title" name="title" value="${escapeHtml(course.title)}" required></div>
-      <div class="field"><label for="edit-course-category">Catégorie</label><select id="edit-course-category" name="category" required>
+      <div class="field"><label for="edit-course-category">Programme / sous-onglet</label><select id="edit-course-category" name="category" required>
         ${renderSchoolCategoryOptions(course.category)}
         <option value="Formation Pro" ${course.category === "Formation Pro" ? "selected" : ""}>Formation Professionnelle</option>
       </select></div>
-      <div class="field"><label for="edit-course-level">Sous-catégorie / classe</label><select id="edit-course-level" name="level">${renderCourseLevelOptions(course.level || "")}</select></div>
+      <div class="field"><label for="edit-course-level">Classe / niveau</label><select id="edit-course-level" name="level">${renderCourseLevelOptions(course.level || "")}</select></div>
       <div class="field"><label for="edit-course-audience">Audience</label><input id="edit-course-audience" name="audience" value="${escapeHtml(course.audience || "")}" required></div>
       <div class="field"><label for="edit-course-duration">Durée</label><input id="edit-course-duration" name="duration" list="edit-course-duration-options" value="${escapeHtml(course.duration || "")}" required placeholder="Ex: 8 semaines ou 3 mois"></div>
       <datalist id="edit-course-duration-options"><option value="4 semaines"></option><option value="8 semaines"></option><option value="12 semaines"></option><option value="3 mois"></option><option value="6 mois"></option><option value="9 mois"></option><option value="1 an"></option></datalist>
