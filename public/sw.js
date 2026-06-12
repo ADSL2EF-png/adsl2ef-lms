@@ -3,7 +3,7 @@
  * VERSION : 2.0.0
  */
 
-const CACHE_NAME = "adsl2ef-v33-course-program-form";
+const CACHE_NAME = "adsl2ef-v34-free-price-fix";
 const OFFLINE_URL = "/offline.html";
 
 const PRECACHE_ASSETS = [

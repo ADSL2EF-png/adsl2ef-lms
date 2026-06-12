@@ -3420,6 +3420,31 @@ function formatPrice(value) {
   return `${Number(value || 0).toLocaleString("fr-FR")} F CFA`;
 }
 
+function isFreePricingLabel(label = "") {
+  return normalizeCategory(label).includes("gratuit");
+}
+
+function getDefaultCoursePrice(catalogType) {
+  return catalogType === "pro" ? 45000 : 15000;
+}
+
+function readCoursePriceFromForm(formData, catalogType, fallbackPrice = null) {
+  const pricingLabel = String(formData.get("pricingLabel") || "").trim();
+  const rawPrice = String(formData.get("price") ?? "").trim();
+  if (isFreePricingLabel(pricingLabel)) return 0;
+  if (!rawPrice) return fallbackPrice ?? getDefaultCoursePrice(catalogType);
+  const price = Number(rawPrice);
+  return Number.isFinite(price) && price >= 0 ? price : (fallbackPrice ?? getDefaultCoursePrice(catalogType));
+}
+
+function isCourseFree(course) {
+  return Number(course?.price || 0) <= 0 || isFreePricingLabel(course?.pricingLabel);
+}
+
+function renderCoursePrice(course) {
+  return isCourseFree(course) ? "Gratuit" : formatPrice(course?.price || 0);
+}
+
 function getCatalogCourses(type) {
   return state.courses.filter((course) => course.status === "published" && course.catalogType === type);
 }
@@ -3559,8 +3584,8 @@ function renderSellCard(course, mode) {
   const cta = isEnrolled
     ? `<button class="btn-primary" onclick="openCourse('${course.id}')">Accéder au cours</button>`
     : isLogged && isStudent
-      ? `<button class="btn-accent" onclick="purchaseCourse('${course.id}')">Acheter maintenant</button>`
-      : `<button class="btn-accent" onclick="showAuthModal('register')">Acheter et créer un compte</button>`;
+      ? `<button class="btn-accent" onclick="purchaseCourse('${course.id}')">${isCourseFree(course) ? "S'inscrire gratuitement" : "Acheter maintenant"}</button>`
+      : `<button class="btn-accent" onclick="showAuthModal('register')">${isCourseFree(course) ? "Créer un compte gratuit" : "Acheter et créer un compte"}</button>`;
   return `
     <article class="store-card">
       ${renderCourseCover(course, course.salesTag || course.category)}
@@ -3581,8 +3606,8 @@ function renderSellCard(course, mode) {
         ${(course.sellingPoints || []).map((point) => `<span class="selling-chip">${escapeHtml(point)}</span>`).join("")}
       </div>
       <div class="price-block">
-        <strong>${formatPrice(course.price)}</strong>
-        <span>${escapeHtml(course.pricingLabel || "")}</span>
+        <strong>${renderCoursePrice(course)}</strong>
+        <span>${isCourseFree(course) ? "accès gratuit" : escapeHtml(course.pricingLabel || "")}</span>
       </div>
       <div class="toolbar" style="justify-content:space-between">
         <span class="tiny">Par ${escapeHtml(teacher?.name || "Equipe ADSL-2EF")}</span>
@@ -6984,7 +7009,7 @@ function openCourseEditor(courseId) {
         <option value="par cohorte" ${course.pricingLabel === "par cohorte" ? "selected" : ""}>par cohorte</option>
         <option value="programme complet" ${course.pricingLabel === "programme complet" ? "selected" : ""}>programme complet</option>
         <option value="accès à vie" ${course.pricingLabel === "accès à vie" ? "selected" : ""}>accès à vie</option>
-        <option value="" ${!course.pricingLabel ? "selected" : ""}>gratuit</option>
+        <option value="gratuit" ${isFreePricingLabel(course.pricingLabel) ? "selected" : ""}>gratuit</option>
       </select></div>
       <div class="field full"><button class="btn-primary" type="submit">Enregistrer</button></div>
     </form>
@@ -7565,7 +7590,7 @@ function purchaseCourse(courseId) {
   }
   const course = getCourseById(courseId);
   const payments = state.config.payments;
-  if (Number(course?.price || 0) <= 0) {
+  if (isCourseFree(course)) {
     enrollUser(courseId, user.id);
     return;
   }
@@ -8016,6 +8041,10 @@ async function processPayment(courseId, provider) {
   const user = getCurrentUser();
   const course = getCourseById(courseId);
   if (!user || !course) return;
+  if (isCourseFree(course)) {
+    enrollUser(courseId, user.id);
+    return;
+  }
   if (!["manual", "paygate"].includes(String(provider || "").toLowerCase())) {
     openModal(`
       <h2>Mode de paiement indisponible</h2>
@@ -8675,8 +8704,8 @@ async function handleCourseCreate(event) {
     status: finalStatus,
     audience: String(formData.get("audience")).trim(),
     duration: String(formData.get("duration")).trim(),
-    price: Number(formData.get("price")) || (catalogType === "pro" ? 45000 : 15000),
-    pricingLabel: String(formData.get("pricingLabel") || (catalogType === "pro" ? "par cohorte" : "par trimestre")),
+    price: readCoursePriceFromForm(formData, catalogType),
+    pricingLabel: String(formData.get("pricingLabel") || (catalogType === "pro" ? "par cohorte" : "par trimestre")).trim(),
     salesTag: catalogType === "pro" ? "Certifiant" : "Best-seller",
     sellingPoints: catalogType === "pro"
       ? ["Templates pedagogiques", "Cas pratiques", "Suivi des cohortes", "Attestation finale"]
@@ -8739,8 +8768,8 @@ async function handleCourseEdit(event) {
   course.catalogType = nextCatalogType;
   course.proAudience = course.catalogType === "pro" ? String(formData.get("proAudience") || "teachers").trim() : "";
   course.proCategory = course.catalogType === "pro" ? String(formData.get("proCategory") || "CAT 1").trim() : "";
-  course.price = Number(formData.get("price")) || course.price || 0;
-  course.pricingLabel = String(formData.get("pricingLabel") || course.pricingLabel || "par trimestre");
+  course.price = readCoursePriceFromForm(formData, nextCatalogType, Number(course.price || 0));
+  course.pricingLabel = String(formData.get("pricingLabel") || course.pricingLabel || "par trimestre").trim();
   course.audience = String(formData.get("audience")).trim();
   course.duration = String(formData.get("duration")).trim();
   course.image = String(formData.get("image")).trim();
