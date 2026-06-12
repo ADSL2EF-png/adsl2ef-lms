@@ -3,7 +3,7 @@
  * VERSION : 2.0.0
  */
 
-const CACHE_NAME = "adsl2ef-v31-program-tabs";
+const CACHE_NAME = "adsl2ef-v32-program-tabs-fix";
 const OFFLINE_URL = "/offline.html";
 
 const PRECACHE_ASSETS = [
