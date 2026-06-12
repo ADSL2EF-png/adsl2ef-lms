@@ -33,6 +33,59 @@ const DEFAULT_SUPABASE_URL = "";
 const DEFAULT_SUPABASE_PUBLISHABLE_KEY = "";
 const DEFAULT_SUPABASE_PROJECT_REF = "";
 
+const SCHOOL_CATEGORY_OPTIONS = [
+  { value: "Collège", label: "Collège" },
+  { value: "Lycée Moderne", label: "Lycée Moderne" },
+  { value: "Technique", label: "Lycée Technique" },
+  { value: "PEI", label: "PEI" },
+  { value: "IB DP", label: "IB DP" },
+  { value: "Adultes", label: "Candidats Libres (BAC/BEPC)" },
+  { value: "Français Collège", label: "Programme français - Collège" },
+  { value: "Français Lycée", label: "Programme français - Lycée" },
+  { value: "Spécialité Terminale", label: "Programme français - Spécialité Terminale" }
+];
+
+const SCHOOL_LEVEL_OPTIONS = {
+  "Collège": ["6ème", "5ème", "4ème", "3ème"],
+  "Lycée Moderne": ["2nde", "Première", "Terminale"],
+  "Technique": ["2nde", "Première", "Terminale"],
+  "PEI": ["PEI 1", "PEI 2", "PEI 3", "PEI 4", "PEI 5"],
+  "IB DP": ["DP"],
+  "Adultes": ["BEPC", "BAC"],
+  "Français Collège": ["6e", "5e", "4e", "3e"],
+  "Français Lycée": ["Seconde", "Première", "Terminale"],
+  "Spécialité Terminale": ["Mathématiques", "Physique-Chimie", "SVT", "HGGSP", "SES", "LLCE"]
+};
+
+const SCHOOL_PROGRAM_OPTIONS = [
+  {
+    value: "togolais",
+    label: "Programme togolais",
+    categories: [
+      { value: "Collège", label: "Collège", matches: ["Collège"] },
+      { value: "Lycée", label: "Lycée", matches: ["Lycée Moderne", "Technique"] },
+      { value: "Adultes", label: "Candidats libres BAC/BEPC", matches: ["Adultes"] }
+    ]
+  },
+  {
+    value: "francais",
+    label: "Programme français",
+    categories: [
+      { value: "Français Collège", label: "Collège", matches: ["Français Collège"] },
+      { value: "Français Lycée", label: "Lycée", matches: ["Français Lycée"] },
+      { value: "Spécialité Terminale", label: "Spécialité Terminale", matches: ["Spécialité Terminale"] }
+    ]
+  },
+  {
+    value: "ib",
+    label: "Programme IB",
+    categories: [
+      { value: "PEI", label: "PEI", matches: ["PEI"] },
+      { value: "IB DP", label: "DP", matches: ["IB DP"] }
+    ]
+  }
+];
+
 function nowISO() { return new Date().toISOString(); }
 function plusDays(days) { const d = new Date(); d.setDate(d.getDate() + days); return d.toISOString(); }
 function escapeHtml(value) {
@@ -436,59 +489,6 @@ const runtimeState = {
   lastSuccessfulApiAt: ""
 };
 let supabaseClient = null;
-
-const SCHOOL_CATEGORY_OPTIONS = [
-  { value: "Collège", label: "Collège" },
-  { value: "Lycée Moderne", label: "Lycée Moderne" },
-  { value: "Technique", label: "Lycée Technique" },
-  { value: "PEI", label: "PEI" },
-  { value: "IB DP", label: "IB DP" },
-  { value: "Adultes", label: "Candidats Libres (BAC/BEPC)" },
-  { value: "Français Collège", label: "Programme français - Collège" },
-  { value: "Français Lycée", label: "Programme français - Lycée" },
-  { value: "Spécialité Terminale", label: "Programme français - Spécialité Terminale" }
-];
-
-const SCHOOL_LEVEL_OPTIONS = {
-  "Collège": ["6ème", "5ème", "4ème", "3ème"],
-  "Lycée Moderne": ["2nde", "Première", "Terminale"],
-  "Technique": ["2nde", "Première", "Terminale"],
-  "PEI": ["PEI 1", "PEI 2", "PEI 3", "PEI 4", "PEI 5"],
-  "IB DP": ["DP"],
-  "Adultes": ["BEPC", "BAC"],
-  "Français Collège": ["6e", "5e", "4e", "3e"],
-  "Français Lycée": ["Seconde", "Première", "Terminale"],
-  "Spécialité Terminale": ["Mathématiques", "Physique-Chimie", "SVT", "HGGSP", "SES", "LLCE"]
-};
-
-const SCHOOL_PROGRAM_OPTIONS = [
-  {
-    value: "togolais",
-    label: "Programme togolais",
-    categories: [
-      { value: "Collège", label: "Collège", matches: ["Collège"] },
-      { value: "Lycée", label: "Lycée", matches: ["Lycée Moderne", "Technique"] },
-      { value: "Adultes", label: "Candidats libres BAC/BEPC", matches: ["Adultes"] }
-    ]
-  },
-  {
-    value: "francais",
-    label: "Programme français",
-    categories: [
-      { value: "Français Collège", label: "Collège", matches: ["Français Collège"] },
-      { value: "Français Lycée", label: "Lycée", matches: ["Français Lycée"] },
-      { value: "Spécialité Terminale", label: "Spécialité Terminale", matches: ["Spécialité Terminale"] }
-    ]
-  },
-  {
-    value: "ib",
-    label: "Programme IB",
-    categories: [
-      { value: "PEI", label: "PEI", matches: ["PEI"] },
-      { value: "IB DP", label: "DP", matches: ["IB DP"] }
-    ]
-  }
-];
 
 const PRO_AUDIENCE_OPTIONS = [
   { value: "teachers", label: "Enseignants" },
