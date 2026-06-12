@@ -940,6 +940,10 @@ th { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-
   overflow-x: auto;
   background: linear-gradient(180deg, #f2f5fb 0%, #e9eef8 100%);
 }
+.school-program-row {
+  background: #fff;
+  gap: 10px;
+}
 .school-topnav-item {
   border: none;
   background: transparent;
@@ -952,6 +956,16 @@ th { font-size: 0.78rem; color: var(--muted); text-transform: uppercase; letter-
 .school-topnav-item.active {
   color: #2147a0;
   border-bottom-color: #2147a0;
+}
+.school-program-row .school-topnav-item {
+  border: 1px solid #d9e3f4;
+  border-radius: 999px;
+  padding: 10px 16px;
+}
+.school-program-row .school-topnav-item.active {
+  background: #2147a0;
+  border-color: #2147a0;
+  color: #fff;
 }
 .school-heading-row {
   display: flex;

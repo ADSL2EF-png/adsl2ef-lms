@@ -416,6 +416,7 @@ const starterData = {
     activeGameQuizId: null,
     currentModuleId: null,
     currentLessonId: null,
+    schoolProgram: "togolais",
     schoolCategory: "all",
     schoolLevel: "all",
     proAudience: "all",
@@ -442,7 +443,10 @@ const SCHOOL_CATEGORY_OPTIONS = [
   { value: "Technique", label: "Lycée Technique" },
   { value: "PEI", label: "PEI" },
   { value: "IB DP", label: "IB DP" },
-  { value: "Adultes", label: "Candidats Libres (BAC/BEPC)" }
+  { value: "Adultes", label: "Candidats Libres (BAC/BEPC)" },
+  { value: "Français Collège", label: "Programme français - Collège" },
+  { value: "Français Lycée", label: "Programme français - Lycée" },
+  { value: "Spécialité Terminale", label: "Programme français - Spécialité Terminale" }
 ];
 
 const SCHOOL_LEVEL_OPTIONS = {
@@ -451,8 +455,40 @@ const SCHOOL_LEVEL_OPTIONS = {
   "Technique": ["2nde", "Première", "Terminale"],
   "PEI": ["PEI 1", "PEI 2", "PEI 3", "PEI 4", "PEI 5"],
   "IB DP": ["DP"],
-  "Adultes": ["BEPC", "BAC"]
+  "Adultes": ["BEPC", "BAC"],
+  "Français Collège": ["6e", "5e", "4e", "3e"],
+  "Français Lycée": ["Seconde", "Première", "Terminale"],
+  "Spécialité Terminale": ["Mathématiques", "Physique-Chimie", "SVT", "HGGSP", "SES", "LLCE"]
 };
+
+const SCHOOL_PROGRAM_OPTIONS = [
+  {
+    value: "togolais",
+    label: "Programme togolais",
+    categories: [
+      { value: "Collège", label: "Collège", matches: ["Collège"] },
+      { value: "Lycée", label: "Lycée", matches: ["Lycée Moderne", "Technique"] },
+      { value: "Adultes", label: "Candidats libres BAC/BEPC", matches: ["Adultes"] }
+    ]
+  },
+  {
+    value: "francais",
+    label: "Programme français",
+    categories: [
+      { value: "Français Collège", label: "Collège", matches: ["Français Collège"] },
+      { value: "Français Lycée", label: "Lycée", matches: ["Français Lycée"] },
+      { value: "Spécialité Terminale", label: "Spécialité Terminale", matches: ["Spécialité Terminale"] }
+    ]
+  },
+  {
+    value: "ib",
+    label: "Programme IB",
+    categories: [
+      { value: "PEI", label: "PEI", matches: ["PEI"] },
+      { value: "IB DP", label: "DP", matches: ["IB DP"] }
+    ]
+  }
+];
 
 const PRO_AUDIENCE_OPTIONS = [
   { value: "teachers", label: "Enseignants" },
@@ -909,11 +945,19 @@ function inferProCategory(course) {
 }
 
 function ensureAcademicCatalog(nextState) {
+  const incomingUi = nextState.ui || {};
+  const inferredProgram = incomingUi.schoolProgram || inferSchoolProgramFromCategory(incomingUi.schoolCategory);
   nextState.ui = {
     ...structuredClone(starterData).ui,
-    ...(nextState.ui || {})
+    ...incomingUi,
+    schoolProgram: inferredProgram
   };
   if (!nextState.ui.schoolLevel) nextState.ui.schoolLevel = "all";
+  const selectedProgram = getSchoolProgram(nextState.ui.schoolProgram);
+  if (!selectedProgram.categories.some((category) => category.value === nextState.ui.schoolCategory)) {
+    nextState.ui.schoolCategory = selectedProgram.categories[0]?.value || "Collège";
+    nextState.ui.schoolLevel = "all";
+  }
   nextState.courses = (nextState.courses || []).map((course) => ({
     ...course,
     level: normalizeCategory(course.category) === "ib dp" ? "DP" : inferCourseLevel(course),
@@ -3378,10 +3422,42 @@ function normalizeCategory(value) {
   return String(value || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
+function getSchoolProgram(value = state.ui.schoolProgram) {
+  return SCHOOL_PROGRAM_OPTIONS.find((program) => program.value === value) || SCHOOL_PROGRAM_OPTIONS[0];
+}
+
+function inferSchoolProgramFromCategory(category = "") {
+  const normalized = normalizeCategory(category);
+  const match = SCHOOL_PROGRAM_OPTIONS.find((program) =>
+    program.categories.some((option) =>
+      normalizeCategory(option.value) === normalized ||
+      (option.matches || []).some((item) => normalizeCategory(item) === normalized)
+    )
+  );
+  return match?.value || "togolais";
+}
+
+function getSchoolProgramCategory(value = state.ui.schoolCategory, programValue = state.ui.schoolProgram) {
+  const program = getSchoolProgram(programValue);
+  return program.categories.find((category) => category.value === value) || program.categories[0];
+}
+
+function courseMatchesProgramCategory(course, categoryOption) {
+  if (!categoryOption) return true;
+  const category = normalizeCategory(course.category);
+  const level = normalizeCategory(course.level);
+  const scope = normalizeCategory(`${course.title || ""} ${course.audience || ""} ${course.category || ""} ${course.level || ""}`);
+  return (categoryOption.matches || [categoryOption.value]).some((item) => {
+    const match = normalizeCategory(item);
+    return category === match || level === match || scope.includes(match);
+  });
+}
+
 function getFilteredSchoolCourses() {
+  const selectedCategory = getSchoolProgramCategory();
   const courses = getCatalogCourses("school");
   return courses.filter((course) => {
-    const categoryMatches = state.ui.schoolCategory === "all" || normalizeCategory(course.category) === normalizeCategory(state.ui.schoolCategory);
+    const categoryMatches = courseMatchesProgramCategory(course, selectedCategory);
     const levelMatches = state.ui.schoolLevel === "all" || normalizeCategory(course.level) === normalizeCategory(state.ui.schoolLevel);
     return categoryMatches && levelMatches;
   });
@@ -3396,7 +3472,16 @@ function getFilteredProCourses() {
 }
 
 function setSchoolCategory(category) {
-  state.ui.schoolCategory = category;
+  const selectedCategory = getSchoolProgramCategory(category);
+  state.ui.schoolCategory = selectedCategory?.value || category;
+  state.ui.schoolLevel = "all";
+  saveState();
+}
+
+function setSchoolProgram(programValue) {
+  const program = getSchoolProgram(programValue);
+  state.ui.schoolProgram = program.value;
+  state.ui.schoolCategory = program.categories[0]?.value || "Collège";
   state.ui.schoolLevel = "all";
   saveState();
 }
@@ -3427,7 +3512,9 @@ function getAvailableSchoolLevels(category) {
   if (!category || category === "all") {
     return [...new Set(Object.values(SCHOOL_LEVEL_OPTIONS).flat())];
   }
-  return SCHOOL_LEVEL_OPTIONS[category] || [];
+  const selectedCategory = getSchoolProgramCategory(category);
+  const sources = selectedCategory?.matches || [category];
+  return [...new Set(sources.flatMap((source) => SCHOOL_LEVEL_OPTIONS[source] || []))];
 }
 
 function renderCourseLevelOptions(selectedValue = "") {
@@ -3495,15 +3582,21 @@ function renderCatalogPage(type) {
   const isSchool = type === "school";
   const courses = isSchool ? getFilteredSchoolCourses() : getFilteredProCourses();
   const total = courses.length;
-  const selectedCategory = state.ui.schoolCategory || "all";
-  const levelOptions = getAvailableSchoolLevels(selectedCategory);
+  const selectedProgram = getSchoolProgram();
+  const selectedCategory = getSchoolProgramCategory(state.ui.schoolCategory, selectedProgram.value);
+  const levelOptions = getAvailableSchoolLevels(selectedCategory?.value);
   return `
     ${isSchool ? `
       <section class="school-topnav panel">
+        <div class="school-topnav-row school-program-row">
+          ${SCHOOL_PROGRAM_OPTIONS.map((program) => {
+            const active = selectedProgram.value === program.value;
+            return `<button class="school-topnav-item ${active ? "active" : ""}" onclick="setSchoolProgram('${program.value}')">${escapeHtml(program.label)}</button>`;
+          }).join("")}
+        </div>
         <div class="school-topnav-row">
-          <button class="school-topnav-item ${selectedCategory === "all" ? "active" : ""}" onclick="setSchoolCategory('all')">Tous</button>
-          ${SCHOOL_CATEGORY_OPTIONS.map((category) => {
-            const active = normalizeCategory(selectedCategory) === normalizeCategory(category.value);
+          ${selectedProgram.categories.map((category) => {
+            const active = selectedCategory?.value === category.value;
             return `<button class="school-topnav-item ${active ? "active" : ""}" onclick="setSchoolCategory('${category.value}')">${escapeHtml(category.label)}</button>`;
           }).join("")}
         </div>
@@ -3552,8 +3645,8 @@ function renderCatalogPage(type) {
       ${isSchool ? `
         <div class="school-heading-row">
           <div>
-            <span class="school-badge">${escapeHtml(state.ui.schoolCategory === "all" ? "Toutes catégories" : state.ui.schoolCategory)}${state.ui.schoolLevel !== "all" ? ` · ${escapeHtml(state.ui.schoolLevel)}` : ""}</span>
-            <h3 class="school-heading-title">Cours par matière et par classe</h3>
+            <span class="school-badge">${escapeHtml(selectedProgram.label)} · ${escapeHtml(selectedCategory?.label || "")}${state.ui.schoolLevel !== "all" ? ` · ${escapeHtml(state.ui.schoolLevel)}` : ""}</span>
+            <h3 class="school-heading-title">Parcours par programme et par classe</h3>
             <p class="section-subtitle">Choisissez votre parcours, achetez le cours et commencez immédiatement.</p>
           </div>
           <div class="school-view-switch">
@@ -10075,6 +10168,7 @@ window.showAuthModal = showAuthModal;
 window.submitLoginForm = submitLoginForm;
 window.logout = logout;
 window.setScreen = setScreen;
+window.setSchoolProgram = setSchoolProgram;
 window.setSchoolCategory = setSchoolCategory;
 window.setSchoolLevel = setSchoolLevel;
 window.setProAudience = setProAudience;
