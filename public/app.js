@@ -869,6 +869,117 @@ function repairSiteConfigText(nextState) {
   return nextState;
 }
 
+function repairCourseEncodingText(value) {
+  if (typeof value !== "string" || !value.includes("?")) return value;
+  return [
+    ["Cr?ation", "Création"],
+    ["?ducatifs", "éducatifs"],
+    ["?ducatif", "éducatif"],
+    ["?ducative", "éducative"],
+    ["cr?ateurs", "créateurs"],
+    ["cr?er", "créer"],
+    ["p?dagogiques", "pédagogiques"],
+    ["p?dagogique", "pédagogique"],
+    ["int?grer", "intégrer"],
+    ["multim?dias", "multimédias"],
+    ["g?rer", "gérer"],
+    ["? l'issue", "À l'issue"],
+    ["d?veloppant", "développant"],
+    ["visibilit?", "visibilité"],
+    ["num?rique", "numérique"],
+    ["ma?triser", "maîtriser"],
+    ["ma?trise", "maîtrise"],
+    ["Baccalaur?at", "Baccalauréat"],
+    ["baccalaur?at", "baccalauréat"],
+    ["d?velopperont", "développeront"],
+    ["d?velopper", "développer"],
+    ["d?veloppent", "développent"],
+    ["comp?tences", "compétences"],
+    ["n?cessaires", "nécessaires"],
+    ["d?couvriront", "découvriront"],
+    ["d?couvrir", "découvrir"],
+    ["diff?renciation", "différenciation"],
+    ["diff?rencier", "différencier"],
+    ["?valuation", "évaluation"],
+    ["?valuations", "évaluations"],
+    ["crit?ri?e", "critériée"],
+    ["sp?cifiques", "spécifiques"],
+    ["th?orie", "théorie"],
+    ["?tudes", "études"],
+    ["unit?s", "unités"],
+    ["align?s", "alignés"],
+    ["Dipl?me", "Diplôme"],
+    ["compr?hension", "compréhension"],
+    ["? travers", "à travers"],
+    ["le?ons", "leçons"],
+    ["pr?paration", "préparation"],
+    ["Sp?cialit?", "Spécialité"],
+    ["Sp?", "Spé"],
+    ["con?u", "conçu"],
+    ["?l?ves", "élèves"],
+    ["fran?ais", "français"],
+    ["th?mes", "thèmes"],
+    ["activit?s", "activités"],
+    ["exp?rimentales", "expérimentales"],
+    ["structur?es", "structurées"],
+    ["corrig?s", "corrigés"],
+    ["entra?nements", "entraînements"],
+    ["privil?gie", "privilégie"],
+    ["ph?nom?nes", "phénomènes"],
+    ["r?solution", "résolution"],
+    ["probl?mes", "problèmes"],
+    ["?preuves", "épreuves"],
+    ["propos?es", "proposées"],
+    ["permettent ?", "permettent à"],
+    ["l'?l?ve", "l'élève"],
+    ["progresser ?", "progresser à"],
+    ["Lyc?e", "Lycée"],
+    ["Math?matiques", "Mathématiques"],
+    ["math?matiques", "mathématiques"],
+    ["vari?es", "variées"],
+    ["d?taill?s", "détaillés"],
+    ["r?soudre", "résoudre"],
+    ["m?thodes", "méthodes"],
+    ["? la r?ussite", "à la réussite"],
+    ["? la poursuite", "à la poursuite"],
+    ["sup?rieures", "supérieures"],
+    ["?conomiques", "économiques"],
+    ["r?daction", "rédaction"],
+    ["t?ches", "tâches"],
+    ["r?p?titives", "répétitives"],
+    ["r?sultats", "résultats"],
+    ["gr?ce", "grâce"],
+    ["Am?liorer", "Améliorer"],
+    ["li?s ?", "liés à"],
+    ["l'?ducation", "l'éducation"],
+    ["d'?cole", "d'école"],
+    ["v?ritable", "véritable"],
+    ["pr?parer", "préparer"],
+    ["concr?tes", "concrètes"],
+    ["?thiques", "éthiques"],
+    ["am?liorer", "améliorer"],
+    ["qualit?", "qualité"],
+    ["r?duisant", "réduisant"],
+    ["consacr?", "consacré"]
+  ].reduce((text, [from, to]) => text.split(from).join(to), value).replaceAll("  à créer", " à créer");
+}
+
+function repairCourseEncodingDeep(value) {
+  if (typeof value === "string") return repairCourseEncodingText(value);
+  if (Array.isArray(value)) return value.map((item) => repairCourseEncodingDeep(item));
+  if (value && typeof value === "object") {
+    Object.keys(value).forEach((key) => {
+      value[key] = repairCourseEncodingDeep(value[key]);
+    });
+  }
+  return value;
+}
+
+function repairCourseCatalogText(nextState) {
+  nextState.courses = repairCourseEncodingDeep(nextState.courses || []);
+  return nextState;
+}
+
 function enforceApiRailwayPersistence(nextState) {
   nextState.config = nextState.config || structuredClone(starterData).config;
   nextState.config.persistence = {
@@ -1162,6 +1273,7 @@ function migrateState(parsed) {
   next.certificateRecords = parsed.certificateRecords || [];
   next.paymentRecords = parsed.paymentRecords || [];
   repairSiteConfigText(next);
+  repairCourseCatalogText(next);
   enforceApiRailwayPersistence(next);
   ensureAcademicCatalog(next);
   return removeDemoCatalogContent(next);
