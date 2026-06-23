@@ -477,7 +477,18 @@ const starterData = {
   }
 };
 
-bootstrapStarterContent(starterData);
+const STARTER_CONTENT_ENABLED = false;
+const DEMO_COURSE_TITLES = new Set([
+  "Collège - Mathématiques et Sciences",
+  "Formation Pro - Enseignants",
+  "Lycée Moderne - Séries A, C, D",
+  "Formation Pro - Directeurs d'école",
+  "Enseignement Technique - Filières industrielles et tertiaires",
+  "École pour Adultes - Candidats libres BAC et BEPC",
+  "IB DP - Tronc commun et préparation internationale"
+]);
+
+if (STARTER_CONTENT_ENABLED) bootstrapStarterContent(starterData);
 let state = loadState();
 if (!state.config.supabase) state.config.supabase = structuredClone(starterData.config.supabase);
 if (!state.config.supabase.projectRef) state.config.supabase.projectRef = DEFAULT_SUPABASE_PROJECT_REF;
@@ -813,6 +824,33 @@ function bootstrapStarterContent(seed) {
   );
 }
 
+function removeDemoCatalogContent(nextState) {
+  const demoCourseIds = new Set((nextState.courses || [])
+    .filter((course) => DEMO_COURSE_TITLES.has(course.title))
+    .map((course) => course.id));
+  if (!demoCourseIds.size) return nextState;
+
+  const demoActivityIds = new Set((nextState.activities || [])
+    .filter((activity) => demoCourseIds.has(activity.courseId))
+    .map((activity) => activity.id));
+
+  nextState.courses = (nextState.courses || []).filter((course) => !demoCourseIds.has(course.id));
+  nextState.activities = (nextState.activities || []).filter((activity) => !demoCourseIds.has(activity.courseId));
+  nextState.questionBank = (nextState.questionBank || []).filter((question) => !demoCourseIds.has(question.courseId));
+  nextState.submissions = (nextState.submissions || []).filter((submission) => !demoActivityIds.has(submission.activityId));
+  nextState.completionRecords = (nextState.completionRecords || []).filter((record) => !demoCourseIds.has(record.courseId));
+  nextState.certificateRecords = (nextState.certificateRecords || []).filter((record) => !demoCourseIds.has(record.courseId));
+  nextState.attendanceSessions = (nextState.attendanceSessions || []).filter((session) => !demoCourseIds.has(session.courseId));
+  nextState.announcements = (nextState.announcements || []).filter((announcement) => !demoCourseIds.has(announcement.courseId));
+  nextState.forumThreads = (nextState.forumThreads || []).filter((thread) => !demoCourseIds.has(thread.courseId));
+  nextState.paymentRecords = (nextState.paymentRecords || []).filter((payment) => !demoCourseIds.has(payment.courseId));
+  nextState.pendingEnrollments = (nextState.pendingEnrollments || []).filter((enrollment) => !demoCourseIds.has(enrollment.courseId));
+  nextState.messages = nextState.messages || [];
+  nextState.notifications = nextState.notifications || [];
+  nextState.activityLog = nextState.activityLog || [];
+  return nextState;
+}
+
 function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) {
@@ -1069,7 +1107,7 @@ function migrateState(parsed) {
   next.certificateRecords = parsed.certificateRecords || [];
   next.paymentRecords = parsed.paymentRecords || [];
   ensureAcademicCatalog(next);
-  return next;
+  return removeDemoCatalogContent(next);
 }
 
 function persistState(nextState = state) { localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState)); }
