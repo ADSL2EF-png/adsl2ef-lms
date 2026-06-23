@@ -851,6 +851,24 @@ function removeDemoCatalogContent(nextState) {
   return nextState;
 }
 
+function repairSiteConfigText(nextState) {
+  const site = nextState.config?.site;
+  if (!site) return nextState;
+  if (String(site.headline || "").includes("�")) {
+    site.headline = "ADSL-2EF — Excellence éducative · Togo";
+  }
+  if (String(site.banner || "").includes("�")) {
+    site.banner = "ASSOCIATION DES DIPLÔMÉS EN SCIENCES ET LETTRES ENGAGÉS POUR L'ÉDUCATION ET LA FORMATION";
+  }
+  if (String(site.subBanner || "").includes("�")) {
+    site.subBanner = "ADSL-2EF · Association éducative agréée · République Togolaise";
+  }
+  if (String(site.contactAddress || "").includes("�")) {
+    site.contactAddress = "Lomé, République Togolaise";
+  }
+  return nextState;
+}
+
 function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) {
@@ -1106,6 +1124,7 @@ function migrateState(parsed) {
   next.completionRecords = parsed.completionRecords || [];
   next.certificateRecords = parsed.certificateRecords || [];
   next.paymentRecords = parsed.paymentRecords || [];
+  repairSiteConfigText(next);
   ensureAcademicCatalog(next);
   return removeDemoCatalogContent(next);
 }
