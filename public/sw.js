@@ -1,9 +1,9 @@
 /**
  * ADSL-2EF — Service Worker (PWA / Mode hors ligne)
- * VERSION : 2.0.2
+ * VERSION : 2.0.3
  */
 
-const CACHE_NAME = "adsl2ef-v36-accents-fix";
+const CACHE_NAME = "adsl2ef-v37-api-resources";
 const OFFLINE_URL = "/offline.html";
 
 const PRECACHE_ASSETS = [

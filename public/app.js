@@ -258,7 +258,7 @@ function renderLessonStructuredSections(lesson, course, module, user) {
             <span class="badge primary">${escapeHtml(definition.key === "courseContent" ? "Cours" : "Étape")}</span>
           </div>
           <div class="meta" style="margin-top:10px;white-space:pre-wrap">${escapeHtml(sections[definition.key])}</div>
-          ${definition.key === "courseContent" && (lesson.resources || []).length ? `
+          ${definition.key === "courseContent" ? ((lesson.resources || []).length ? `
             <div class="lesson-embed-list">
               ${(lesson.resources || []).map((resource) => `
                 <article class="lesson-embed-card">
@@ -276,7 +276,7 @@ function renderLessonStructuredSections(lesson, course, module, user) {
             <div class="resource-grid">
               ${(lesson.resources || []).map((resource) => `<div class="resource-item"><div><strong>${escapeHtml(resource.title)}</strong><div class="tiny">${escapeHtml(resource.type)}</div></div>${renderResourceAction(course.id, module.id, lesson.id, resource)}</div>`).join("")}
             </div>
-          ` : ""}
+          ` : `<div class="empty-state" style="margin-top:14px">Aucune ressource jointe pour cette leçon. Ajoutez un PDF, une vidéo YouTube, un lien Drive ou un document depuis l'édition de la leçon.</div>`) : ""}
         </article>
       `).join("")}
     </div>
@@ -426,7 +426,7 @@ const starterData = {
     googleSheets: { enabled: false, webAppUrl: "" },
     jsonbin: { enabled: false, binId: "", apiKey: "", accessKey: "", lastSyncAt: "" },
     supabase: {
-      enabled: true,
+      enabled: false,
       projectRef: DEFAULT_SUPABASE_PROJECT_REF,
       url: DEFAULT_SUPABASE_URL,
       anonKey: DEFAULT_SUPABASE_PUBLISHABLE_KEY,
@@ -869,6 +869,43 @@ function repairSiteConfigText(nextState) {
   return nextState;
 }
 
+function enforceApiRailwayPersistence(nextState) {
+  nextState.config = nextState.config || structuredClone(starterData).config;
+  nextState.config.persistence = {
+    ...structuredClone(starterData).config.persistence,
+    ...(nextState.config.persistence || {}),
+    mode: "api",
+    apiBaseUrl: "https://adsl2ef-lms-production.up.railway.app",
+    apiToken: "adsl2ef-prod-2ef8a3c7f1b94d2e6a05f8c3d7e1b9a4",
+    healthPath: "/health",
+    apiSnapshotPath: "/lms/state",
+    authMePath: "/auth/me",
+    summaryPath: "/lms/summary",
+    eventsReadPath: "/lms/events",
+    authLoginPath: "/auth/login",
+    authRegisterPath: "/auth/register",
+    paymentInitPath: "/payments/init",
+    paymentStatusPath: "/payments/status",
+    operationsPath: "/lms/events"
+  };
+  nextState.config.supabase = {
+    ...structuredClone(starterData).config.supabase,
+    ...(nextState.config.supabase || {}),
+    enabled: false
+  };
+  nextState.config.googleSheets = {
+    ...structuredClone(starterData).config.googleSheets,
+    ...(nextState.config.googleSheets || {}),
+    enabled: false
+  };
+  nextState.config.jsonbin = {
+    ...structuredClone(starterData).config.jsonbin,
+    ...(nextState.config.jsonbin || {}),
+    enabled: false
+  };
+  return nextState;
+}
+
 function loadState() {
   const raw = localStorage.getItem(STORAGE_KEY);
   if (!raw) {
@@ -1125,6 +1162,7 @@ function migrateState(parsed) {
   next.certificateRecords = parsed.certificateRecords || [];
   next.paymentRecords = parsed.paymentRecords || [];
   repairSiteConfigText(next);
+  enforceApiRailwayPersistence(next);
   ensureAcademicCatalog(next);
   return removeDemoCatalogContent(next);
 }
